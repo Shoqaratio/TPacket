@@ -67,3 +67,22 @@ Ces changements sont présents dans l'arbre de travail, sans numéro de version 
 - Le copier/coller inter-projets valide les fragments importés et régénère leurs IDs/MAC, tout en
   conservant liens internes, annotations et configuration IOS.
 - Validation : 84 tests moteur, 9 tests web, 11 tests Playwright, typechecks engine/web et builds.
+
+### Phase 3 — compléments de routage NAT et TCP
+- Le client TCP complète maintenant le handshake par ACK, séquence les données, puis ferme par
+  FIN/FIN-ACK/ACK ; le test vérifie les numéros de séquence/ACK.
+- Ajout d'un test NAT dynamique par pool sur un réseau extérieur simulé, en plus des scénarios PAT
+  et NAT statique ; NAT/PAT est désormais testé de bout en bout dans le simulateur.
+- Validation locale à cette étape : 85 tests moteur réussis. Les sections suivantes décrivent les
+  compléments ultérieurs sur les échanges RIP/OSPF et les services TCP.
+
+### Phase 3 — services applicatifs et cycle TCP
+- Le serveur TCP maintient désormais l'état minimal du handshake, vérifie les séquences, rejoue les
+  réponses aux segments de données/FIN retransmis et refuse les données arrivant sans connexion.
+- Ajout de FTP (LIST/RETR/STOR), SMTP/POP3 (envoi, boîte aux lettres et lecture) et NTP (horloge
+  virtuelle), avec commandes PC, activation dans l'onglet Services et limites de stockage.
+- Validation locale : 88 tests moteur, 9 web, 19 API, 11 Playwright, typechecks et builds réussis.
+- Ajout de mises à jour RIP UDP 520 périodiques (30 s), de Hello OSPFv2 (10 s) et de Hello/LSA
+  OSPFv3 multicast IP 89 visibles dans les événements et livrés sur les domaines L2. Les routes
+  restent projetées à l'état convergé ; dead timer, hold-down et installation progressive ne sont
+  pas modélisés.

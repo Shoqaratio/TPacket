@@ -35,6 +35,7 @@ function withPort(p: Ipv4Pkt, side: 'src' | 'dst', port: number): Ipv4Pkt {
 
 /** Inside → outside. Returns the translated packet, the original when no rule applies, or null (no address left). */
 export function natOutbound(net: Network, d: RtDevice, inIf: string, outIf: string, p: Ipv4Pkt): Ipv4Pkt | null {
+  if (p.proto === 'ospf') return p;
   const c = d.ios!;
   if (!c.interfaces.get(inIf)?.natInside || !c.interfaces.get(outIf)?.natOutside) return p;
   const st = c.nat.statics.find((s) => s.local === p.src);

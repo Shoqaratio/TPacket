@@ -9,7 +9,7 @@ import { type AclEntry, defaultIosConfig, type IfConfig, type IosConfig, renderR
 import { loadIosConfig } from '../ios/load';
 import { Apps } from './apps';
 import { type NatEntry, natInbound, natOutbound } from './nat';
-import { type AppData, cloneFrame, describeFrame, type Dhcp6Msg, type DhcpMsg, type Frame, type IcmpPkt, type Ipv4Pkt, type Ipv6Pkt, type IpQuote, protoOf, type TcpFlags } from './packets';
+import { type AppData, cloneFrame, describeFrame, type Dhcp6Msg, type DhcpMsg, type Frame, type IcmpPkt, type Ipv4Pkt, type Ipv6Pkt, type IpQuote, type Ospf6ControlMessage, protoOf, type TcpFlags } from './packets';
 import { computeDynamic, type DynamicResult } from './routing';
 import { computeStp, portCost, type StpBridge, type StpRole } from './stp';
 
@@ -95,6 +95,7 @@ export type EchoOutcome =
   | { kind: 'no-route' }
   | { kind: 'data'; from: number; rtt: number; data: AppData }
   | { kind: 'synack'; from: number; rtt: number }
+  | { kind: 'closed' }
   | { kind: 'reset'; from: number; rtt: number };
 
 export interface L3If6 {
@@ -190,13 +191,21 @@ function dropReason(code: string, params?: Record<string, string>): Reason {
   return params ? { code, params } : { code };
 }
 
-interface QueueItem {
-  at: number;
-  seq: number;
-  device: string;
-  port: string;
-  frame: Frame;
-}
+type QueueItem =
+  | {
+    kind: 'frame';
+    at: number;
+    seq: number;
+    device: string;
+    port: string;
+    frame: Frame;
+  }
+  | {
+    kind: 'timer';
+    at: number;
+    seq: number;
+    callback: () => void;
+  };
 
 export class Network {
   devices = new Map<string, RtDevice>();
@@ -1072,29 +1081,34 @@ export class Network {
     const spec = d.ports.get(port)!.spec;
     const at = this.now + this.latency(spec.media, spec.speed);
     this.record({ device: d.doc.id, kind: 'tx', proto: protoOf(frame), info: describeFrame(frame), port, link: pr.link.id, to: pr.device, arrive: at, frame });
-    const item: QueueItem = { at, seq: ++this.seq, device: pr.device, port: pr.port, frame };
+    this.enqueue(at, pr.device, pr.port, frame);
+  }
+
+  private enqueue(at: number, device: string, port: string, frame: Frame): void {
+    this.insertQueueItem({ kind: 'frame', at, seq: ++this.seq, device, port, frame });
+  }
+
+  private enqueueTimer(at: number, callback: () => void): void {
+    this.insertQueueItem({ kind: 'timer', at, seq: ++this.seq, callback });
+  }
+
+  private insertQueueItem(item: QueueItem): void {
     let lo = 0;
     let hi = this.queue.length;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
       const q = this.queue[mid]!;
-      if (q.at < at || (q.at === at && q.seq < item.seq)) lo = mid + 1;
+      if (q.at < item.at || (q.at === item.at && q.seq < item.seq)) lo = mid + 1;
       else hi = mid;
     }
     this.queue.splice(lo, 0, item);
   }
 
-  private enqueue(at: number, device: string, port: string, frame: Frame): void {
-    const item: QueueItem = { at, seq: ++this.seq, device, port, frame };
-    let lo = 0;
-    let hi = this.queue.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      const q = this.queue[mid]!;
-      if (q.at < at || (q.at === at && q.seq < item.seq)) lo = mid + 1;
-      else hi = mid;
-    }
-    this.queue.splice(lo, 0, item);
+  /** Schedules a recurring control-plane action that is cancelled by a topology/config change. */
+  scheduleRoutingTimer(delay: number, version: number, callback: () => void): void {
+    this.enqueueTimer(this.now + delay, () => {
+      if (this.version === version) callback();
+    });
   }
 
   /** Radio: a client talks to its AP; the AP delivers to the addressed station (or all, for broadcasts). */
@@ -1141,7 +1155,8 @@ export class Network {
       }
       const item = this.queue.shift()!;
       this.now = Math.max(this.now, item.at);
-      this.receive(item.device, item.port, item.frame);
+      if (item.kind === 'frame') this.receive(item.device, item.port, item.frame);
+      else item.callback();
       if (done()) return;
     }
     this.now = Math.max(this.now, deadline);
@@ -1161,7 +1176,8 @@ export class Network {
     while (this.queue.length && this.queue[0]!.at === at) {
       const item = this.queue.shift()!;
       this.now = Math.max(this.now, item.at);
-      this.receive(item.device, item.port, item.frame);
+      if (item.kind === 'frame') this.receive(item.device, item.port, item.frame);
+      else item.callback();
     }
     return true;
   }
@@ -1281,7 +1297,8 @@ export class Network {
       if (!this.ifUp(d, iface)) return this.drop(d, f, dropReason('iface_down', { iface }), port);
     } else if (f.tag !== undefined) return this.drop(d, f, dropReason('tagged_on_access', { port }), port);
     const ipv6Multicast = f.type === 'ipv6' && f.dst.startsWith('3333');
-    if (!f.hdlc && f.dst !== BROADCAST_MAC && f.dst !== this.ifMac(d, iface) && !ipv6Multicast) return this.drop(d, f, dropReason('not_my_mac'), port);
+    const ipv4Multicast = f.type === 'ipv4' && f.dst.startsWith('01005e');
+    if (!f.hdlc && f.dst !== BROADCAST_MAC && f.dst !== this.ifMac(d, iface) && !ipv6Multicast && !ipv4Multicast) return this.drop(d, f, dropReason('not_my_mac'), port);
     this.l3Receive(d, iface, f);
   }
 
@@ -1305,7 +1322,8 @@ export class Network {
       }
       if (cfg?.natOutside) p = natInbound(d, ifName, p);
     }
-    const local = this.isLocalAddress(d, p.dst, ifName);
+    const routingControl = !!d.ios && (p.proto === 'ospf' || (p.proto === 'udp' && p.udp?.dport === 520));
+    const local = this.isLocalAddress(d, p.dst, ifName) || routingControl;
     if (local) return this.localDeliver(d, ifName, p, f);
     if (this.routingEnabled(d)) return this.forward(d, ifName, p, f);
     this.drop(d, f, dropReason('not_for_me'));
@@ -1500,12 +1518,15 @@ export class Network {
       const key = `${d.doc.id}|t|${t.dport}`;
       if (this.waiters.has(key)) {
         if (t.flags === 'SYN-ACK') return this.wake(key, { kind: 'synack', from: p.src, rtt: 0 });
+        if (t.flags === 'FIN-ACK') return this.wake(key, { kind: 'closed' });
         if (t.flags === 'RST') return this.wake(key, { kind: 'reset', from: p.src, rtt: 0 });
         if (t.data) return this.wake(key, { kind: 'data', from: p.src, rtt: 0, data: t.data });
         return;
       }
       this.apps.tcp(d, p);
+      return;
     }
+    if (p.proto === 'ospf') return;
   }
 
   private wake(key: string, o: EchoOutcome): void {
@@ -1654,17 +1675,27 @@ export class Network {
     return o;
   }
 
-  /** TCP three-way handshake followed by one request/response exchange. */
+  /** TCP handshake, one request/response exchange, and an orderly FIN close. */
   tcpTransaction(devId: string, dst: number, dport: number, data: AppData, timeout = 3000): EchoOutcome {
     const d = this.dev(devId);
     const sport = this.allocPort();
     const key = `${devId}|t|${sport}`;
-    const seg = (flags: TcpFlags, payload?: AppData) => () =>
-      this.originate(d, { src: 0, dst, ttl: this.defaultTtl(d), proto: 'tcp', id: this.ipId++, tcp: { sport, dport, flags, seq: 1000, ack: 0, ...(payload ? { data: payload } : {}) } });
-    let hs: EchoOutcome = { kind: 'timeout' };
-    for (let i = 0; i < 3 && hs.kind === 'timeout'; i++) hs = this.probe(d, key, timeout, seg('SYN')); // SYN retransmission
+    const seg = (flags: TcpFlags, seq: number, ack: number, payload?: AppData) => () =>
+      this.originate(d, { src: 0, dst, ttl: this.defaultTtl(d), proto: 'tcp', id: this.ipId++, tcp: { sport, dport, flags, seq, ack, ...(payload ? { data: payload } : {}) } });
+    const retry = (send: () => boolean): EchoOutcome => {
+      let outcome: EchoOutcome = { kind: 'timeout' };
+      for (let i = 0; i < 3 && outcome.kind === 'timeout'; i++) outcome = this.probe(d, key, timeout, send);
+      return outcome;
+    };
+    const hs = retry(seg('SYN', 1000, 0));
     if (hs.kind !== 'synack') return hs;
-    return this.probe(d, key, timeout, seg('PSH-ACK', data));
+    this.originate(d, { src: 0, dst, ttl: this.defaultTtl(d), proto: 'tcp', id: this.ipId++, tcp: { sport, dport, flags: 'ACK', seq: 1001, ack: 5001 } });
+    const response = retry(seg('PSH-ACK', 1001, 5001, data));
+    if (response.kind !== 'data') return response;
+    const close = retry(seg('FIN', 1002, 5002));
+    if (close.kind !== 'closed') return close;
+    this.originate(d, { src: 0, dst, ttl: this.defaultTtl(d), proto: 'tcp', id: this.ipId++, tcp: { sport, dport, flags: 'ACK', seq: 1003, ack: 5003 } });
+    return response;
   }
 
   /** `ipconfig /renew`: DHCP DISCOVER/OFFER/REQUEST/ACK, then APIPA when no server answers. */
@@ -1850,6 +1881,14 @@ export class Network {
     }
   }
 
+  sendOspf6Control(d: RtDevice, ifName: string, message: Ospf6ControlMessage): void {
+    const iface = this.l3Ifs6(d).find((candidate) => candidate.name === ifName);
+    if (!iface || !this.ifUp(d, ifName)) return;
+    const dst = (0xff02n << 112n) | 0x5n;
+    const pkt: Ipv6Pkt = { src: iface.ll, dst, hop: 1, ospf6: message };
+    this.ifTransmit(d, ifName, { src: iface.mac, dst: multicastMac6(dst), type: 'ipv6', ip6: pkt, hops: 0 });
+  }
+
   originate6(d: RtDevice, pkt: Ipv6Pkt): boolean {
     const r = this.resolve6(d, pkt.dst);
     if (!r) return false;
@@ -1865,6 +1904,11 @@ export class Network {
     const p = f.ip6!;
     const me = this.l3Ifs6(d).find((i) => i.name === ifName);
     if (!me) return this.drop(d, f, dropReason('no_ipv6', { iface: ifName }));
+    if (p.ospf6) {
+      if (!d.ios?.ipv6Routing || !d.ios.ospf6) return this.drop(d, f, dropReason('not_for_me'));
+      this.record({ device: d.doc.id, kind: 'deliver', proto: 'OSPFv3', info: describeFrame(f), frame: f });
+      return;
+    }
     if (p.udp) {
       if (p.src !== 0n) d.nd.set(p.src, { mac: f.src, iface: ifName, at: this.now });
       if (d.ios && p.udp.dport === 547 && p.udp.data?.app === 'dhcp6' && isMulticast6(p.dst)) {

@@ -143,7 +143,7 @@ function Services({ project, dev }: { project: string; dev: DeviceView }) {
   const input = 'rounded border border-line bg-panel2 px-2 py-1 font-mono outline-none focus:border-accent';
   const up = (fn: (s: ServicesDoc) => void) => setSvc((x) => { const y = structuredClone(x); fn(y); return y; });
   const section = 'rounded border border-line p-3';
-  const enabled = (k: 'dhcp' | 'dns' | 'http' | 'tftp') => (
+  const enabled = (k: 'dhcp' | 'dns' | 'http' | 'tftp' | 'ftp' | 'mail' | 'ntp') => (
     <label className="flex items-center gap-1"><input type="checkbox" checked={svc[k].enabled} onChange={(e) => up((s) => (s[k].enabled = e.target.checked))} /> {t('svc.enabled')}</label>
   );
   const pool = svc.dhcp.pools[0]!;
@@ -189,7 +189,20 @@ function Services({ project, dev }: { project: string; dev: DeviceView }) {
           ))}</ul>
         )}
       </section>
-      <button className="self-start rounded bg-accent px-3 py-1 text-white" onClick={() => void sim.op(project, 'setServices', dev.id, { ...svc, tftp: { ...svc.tftp, files: dev.services!.tftp.files } }).then(() => toast(t('win.applied')), fail)}>{t('svc.save')}</button>
+      <section className={section}>
+        <h3 className="mb-2 font-semibold">{t('svc.ftp')}</h3>{enabled('ftp')}
+        <p className="text-muted">{t('svc.ftpHelp')}</p>
+        <p className="font-mono">{Object.keys(dev.services!.ftp.files).sort().join(', ') || t('svc.none')}</p>
+      </section>
+      <section className={section}>
+        <h3 className="mb-2 font-semibold">{t('svc.mail')}</h3>{enabled('mail')}
+        <p className="text-muted">{t('svc.mailHelp')}</p>
+      </section>
+      <section className={section}>
+        <h3 className="mb-2 font-semibold">{t('svc.ntp')}</h3>{enabled('ntp')}
+        <p className="text-muted">{t('svc.ntpHelp')}</p>
+      </section>
+      <button className="self-start rounded bg-accent px-3 py-1 text-white" onClick={() => void sim.op(project, 'setServices', dev.id, { ...svc, tftp: { ...svc.tftp, files: dev.services!.tftp.files }, ftp: { ...svc.ftp, files: dev.services!.ftp.files }, mail: { ...svc.mail, messages: dev.services!.mail.messages } }).then(() => toast(t('win.applied')), fail)}>{t('svc.save')}</button>
     </div>
   );
 }

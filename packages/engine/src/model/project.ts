@@ -40,6 +40,9 @@ export function defaultServices(): ServicesDoc {
     dns: { enabled: false, records: [] },
     http: { enabled: true, https: true, pages: { '/index.html': '<html><body><h1>TPacket</h1><p>Welcome to this web server.</p></body></html>' } },
     tftp: { enabled: true, files: {} },
+    ftp: { enabled: true, files: {} },
+    mail: { enabled: false, messages: [] },
+    ntp: { enabled: true },
   };
 }
 
@@ -75,6 +78,23 @@ export function validateServices(v: Json): ServicesDoc {
       for (const [k, f] of Object.entries(v.tftp.files).slice(0, 200)) out.tftp.files[str(k, 100, 'file name')] = str(f, 64 * 1024, 'file');
     }
   }
+  if (isObj(v.ftp)) {
+    out.ftp.enabled = v.ftp.enabled !== false;
+    if (isObj(v.ftp.files)) {
+      out.ftp.files = {};
+      for (const [k, f] of Object.entries(v.ftp.files).slice(0, 200)) out.ftp.files[str(k, 100, 'file name')] = str(f, 64 * 1024, 'file');
+    }
+  }
+  if (isObj(v.mail)) {
+    out.mail.enabled = v.mail.enabled === true;
+    if (Array.isArray(v.mail.messages)) {
+      out.mail.messages = v.mail.messages.slice(-500).filter(isObj).map((m) => ({
+        from: str(m.from, 254, 'mail sender'), to: str(m.to, 254, 'mail recipient'),
+        subject: str(m.subject, 998, 'mail subject'), body: str(m.body, 64 * 1024, 'mail body'),
+      }));
+    }
+  }
+  if (isObj(v.ntp)) out.ntp.enabled = v.ntp.enabled !== false;
   return out;
 }
 

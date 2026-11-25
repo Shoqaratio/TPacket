@@ -54,6 +54,9 @@ export interface ServicesDoc {
   dns: { enabled: boolean; records: { name: string; ip: string }[] };
   http: { enabled: boolean; https: boolean; pages: Record<string, string> };
   tftp: { enabled: boolean; files: Record<string, string> };
+  ftp: { enabled: boolean; files: Record<string, string> };
+  mail: { enabled: boolean; messages: { from: string; to: string; subject: string; body: string }[] };
+  ntp: { enabled: boolean };
 }
 
 export interface WirelessDoc {

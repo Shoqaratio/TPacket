@@ -13,9 +13,9 @@ la phase 2 et la correction du conflit d'inscription du compte administrateur pa
 
 | Suite | Résultat | Commande |
 | --- | --- | --- |
-| Moteur (Vitest) | 84 tests réussis | `npm test -w @netlab/engine` |
+| Moteur (Vitest) | 88 tests réussis | `npm test -w @netlab/engine` |
 | Web (Vitest) | 9 tests réussis | `npm test -w @netlab/web` |
-| API (Pytest) | 18 tests réussis | `cd apps/api && .venv/bin/python -m pytest -q --timeout 60` |
+| API (Pytest) | 19 tests réussis | `cd apps/api && .venv/bin/python -m pytest -q --timeout 60` |
 | Bout en bout (Playwright, Chromium, 1366×768, fr-FR) | 11/11 tests réussis dans la suite complète | `cd apps/web && npx playwright test` |
 | Typechecks engine + web | OK | `npm run typecheck` |
 | Builds grader + web | OK | `npm run build` |
@@ -34,8 +34,8 @@ serveur sont donc ceux de l'environnement de test, pas une instance de productio
   rétablir (50 niveaux), raccourcis clavier, export PNG / SVG / PDF, plein écran.
 - Fenêtre d'équipement : Physique (alimentation, modules), Config (PC : IP ; IOS : import/export de
   configuration texte), CLI, Bureau (Configuration IP, Invite de commandes, Terminal console).
-- Hôtes : configuration IPv4 statique ou DHCP, IPv6 statique/SLAAC/DHCPv6 et Wi-Fi. Points d'accès configurables ; les
-  serveurs proposent DHCP, DNS, TFTP et HTTP(S). Le navigateur intégré est sandboxé.
+- Hôtes : configuration IPv4 statique ou DHCP, IPv6 statique/SLAAC/DHCPv6 et Wi-Fi. Points d'accès configurables ;
+  les serveurs proposent DHCP, DNS, TFTP, HTTP(S), FTP, SMTP/POP3 et NTP simulés. Le navigateur intégré est sandboxé.
 - Moteur dans un Web Worker ; sauvegarde automatique IndexedDB ; synchronisation cloud avec
   détection de conflit ; import/export `.netlab`.
 - Modes Temps réel (avance rapide +30 s) et Simulation (PDU complexes ICMP/TCP/UDP, pas à pas,
@@ -75,9 +75,11 @@ Voir `ROADMAP.md` pour le plan détaillé. Principaux manques :
 - Activity Wizard, variantes d'exercices à graine et Network Incident.
 - Fonctions d'identité avancées : vérification/réinitialisation par e-mail, 2FA, OIDC et LTI ;
   interfaces d'administration détaillées.
-- Protocoles/services manquants : FTP/SMTP/POP3/NTP. Les modèles phase 2 et les fonctions livrées
-  en phase 3 restent des sous-ensembles ; le routeur Wi-Fi ne propose pas de configuration de
-  bridge/VLAN granulaire. Voir `COMPATIBILITY.md`.
+- Les mises à jour RIP et les messages Hello/LSA OSPFv2/v3 sont livrés sur L2 avec des minuteries
+  périodiques ; l'installation des routes reste une projection de l'état convergé, sans dead timer,
+  hold-down ni convergence progressive. TCP et les services applicatifs sont des sous-ensembles,
+  pas des piles RFC complètes ; le routeur Wi-Fi ne propose pas de configuration de bridge/VLAN
+  granulaire. Voir `COMPATIBILITY.md`.
 
 ## Limitations connues
 - Docker n'est pas installé sur la machine de développement. Les images ont été construites et la

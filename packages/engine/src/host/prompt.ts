@@ -59,6 +59,12 @@ export class HostPrompt {
         return this.arp(args);
       case 'nslookup':
         return this.nslookup(args);
+      case 'ftp':
+        return this.ftp(args);
+      case 'mail':
+        return this.mail(args);
+      case 'ntp':
+        return this.ntp(args);
       case 'telnet':
         return this.connect('telnet', args);
       case 'ssh':
@@ -211,6 +217,61 @@ export class HostPrompt {
     return `${head}\nDNS request timed out.\n    timeout was 15000 milli seconds.\n*** Request to ${server} timed-out`;
   }
 
+  private ftp(args: string[]): string {
+    const [host, rawCommand, file, ...content] = args;
+    const command = rawCommand?.toUpperCase();
+    if (!host || !['LIST', 'GET', 'PUT'].includes(command ?? '')) return 'Usage: ftp <server> list | get <file> | put <file> <content>';
+    if ((command === 'GET' || command === 'PUT') && !file) return 'A file name is required.';
+    const address = this.net.resolveName(this.devId, host);
+    if (address.ip === undefined) return 'Host Name Unresolved';
+    const payload = command === 'LIST'
+      ? { app: 'ftp' as const, command: 'LIST' as const }
+      : command === 'GET'
+        ? { app: 'ftp' as const, command: 'RETR' as const, file }
+        : { app: 'ftp' as const, command: 'STOR' as const, file, content: content.join(' ') };
+    const result = this.net.tcpTransaction(this.devId, address.ip, 21, payload);
+    if (result.kind !== 'data' || result.data.app !== 'ftp') return result.kind === 'reset' ? 'FTP service unavailable.' : 'FTP request timed out.';
+    if (result.data.error) return `FTP error: ${result.data.error}`;
+    if (result.data.command === 'LIST') return (result.data.files ?? []).join('\n') || 'No files.';
+    if (result.data.command === 'RETR') return result.data.content ?? '';
+    return result.data.response ?? 'File stored.';
+  }
+
+  private mail(args: string[]): string {
+    const [host, rawCommand, ...rest] = args;
+    const command = rawCommand?.toLowerCase();
+    if (!host || !['send', 'check'].includes(command ?? '')) return 'Usage: mail <server> send <from> <to> <subject> <body> | check <mailbox> [message number]';
+    const address = this.net.resolveName(this.devId, host);
+    if (address.ip === undefined) return 'Host Name Unresolved';
+    if (command === 'send') {
+      const [from, to, subject, ...body] = rest;
+      if (!from || !to || !subject || !body.length) return 'Usage: mail <server> send <from> <to> <subject> <body>';
+      const result = this.net.tcpTransaction(this.devId, address.ip, 25, { app: 'smtp', command: 'SEND', from, to, subject, body: body.join(' ') });
+      if (result.kind !== 'data' || result.data.app !== 'smtp') return result.kind === 'reset' ? 'SMTP service unavailable.' : 'SMTP request timed out.';
+      return result.data.accepted ? 'Message accepted by SMTP server.' : `SMTP error: ${result.data.reason ?? 'message rejected'}`;
+    }
+    const [mailbox, rawIndex] = rest;
+    if (!mailbox) return 'Usage: mail <server> check <mailbox> [message number]';
+    const index = rawIndex === undefined ? undefined : Number(rawIndex);
+    if (index !== undefined && (!Number.isInteger(index) || index < 1)) return 'Message number must be a positive integer.';
+    const result = this.net.tcpTransaction(this.devId, address.ip, 110, { app: 'pop3', command: index ? 'RETR' : 'LIST', mailbox, ...(index ? { index } : {}) });
+    if (result.kind !== 'data' || result.data.app !== 'pop3') return result.kind === 'reset' ? 'POP3 service unavailable.' : 'POP3 request timed out.';
+    if (result.data.error) return `POP3 error: ${result.data.error}`;
+    if (result.data.message) return `From: ${result.data.message.from}\nTo: ${result.data.message.to}\nSubject: ${result.data.message.subject}\n\n${result.data.message.body}`;
+    return (result.data.messages ?? []).map((m, i) => `${i + 1} ${m.from} ${m.subject}`).join('\n') || 'No messages.';
+  }
+
+  private ntp(args: string[]): string {
+    const host = args[0];
+    if (!host) return 'Usage: ntp <server>';
+    const address = this.net.resolveName(this.devId, host);
+    if (address.ip === undefined) return 'Host Name Unresolved';
+    const result = this.net.udpRequest(this.devId, address.ip, 123, { app: 'ntp' });
+    if (result.kind !== 'data' || result.data.app !== 'ntp') return 'NTP request timed out.';
+    if (result.data.serverTime === undefined) return 'NTP server returned an invalid response.';
+    return `NTP time synchronized: ${Math.round(result.data.serverTime)} ms (simulation clock).`;
+  }
+
   /** `telnet <host>` / `ssh -l <user> <host>`: TCP connection through the network, then the remote VTY session. */
   private connect(proto: 'telnet' | 'ssh', args: string[]): string {
     let user: string | undefined;
@@ -258,6 +319,9 @@ arp       Display the arp table (arp -a, arp -d)
 help      Display the list of available commands
 ipconfig  Display network configuration (ipconfig /all, /renew, /release)
 nslookup  DNS lookup
+ftp       FTP client (ftp <server> list|get|put)
+mail      SMTP/POP3 client (mail <server> send|check)
+ntp       Synchronize with an NTP server
 ping      Send echo messages (ping [-n count] [-t] address|name|ipv6)
 ssh       Ssh client (ssh -l username target)
 telnet    Telnet client

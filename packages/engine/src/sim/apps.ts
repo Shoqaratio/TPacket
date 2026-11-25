@@ -1,14 +1,27 @@
 /**
  * Application-layer services reached through real UDP/TCP packets:
  * DHCP (IOS pools, Server device, relay via ip helper-address), DNS, TFTP, HTTP/HTTPS,
- * Telnet/SSH listeners on IOS VTY lines.
+ * FTP, SMTP/POP3, NTP, and Telnet/SSH listeners on IOS VTY lines.
  */
 import { BROADCAST_IP, broadcastOf, isUsableHost, networkOf, parseIp } from '../net/ipv4';
 import { BROADCAST_MAC } from '../net/mac';
 import type { Network, RtDevice } from './network';
 import type { AppData, DhcpMsg, Ipv4Pkt } from './packets';
 
+interface TcpConnection {
+  state: 'syn-received' | 'established' | 'closing';
+  clientNext: number;
+  serverNext: number;
+  lastRequestSeq?: number;
+  lastResponse?: AppData;
+  lastResponseSeq?: number;
+  lastResponseAck?: number;
+  finAck?: { seq: number; ack: number };
+}
+
 export class Apps {
+  private tcpConnections = new Map<string, TcpConnection>();
+
   constructor(private net: Network) {}
 
   private reply(d: RtDevice, req: Ipv4Pkt, data: AppData): void {
@@ -40,6 +53,11 @@ export class Apps {
       }
       return true;
     }
+    if (u.dport === 123 && data?.app === 'ntp' && svc?.ntp.enabled) {
+      this.reply(d, p, { app: 'ntp', serverTime: this.net.now });
+      return true;
+    }
+    if (u.dport === 520 && data?.app === 'rip') return true;
     return false;
   }
 
@@ -129,6 +147,47 @@ export class Apps {
           : { app: 'http', status: 200, body, secure: port === 443 };
       };
     }
+    if (svc?.ftp.enabled && port === 21) {
+      return (data) => {
+        if (data?.app !== 'ftp') return { app: 'ftp', command: 'LIST', error: 'Invalid FTP request' };
+        if (data.command === 'LIST') return { app: 'ftp', command: 'LIST', files: Object.keys(svc.ftp.files).sort() };
+        if (data.command === 'RETR') {
+          const content = data.file ? svc.ftp.files[data.file] : undefined;
+          return content === undefined
+            ? { app: 'ftp', command: 'RETR', file: data.file, error: 'File not found' }
+            : { app: 'ftp', command: 'RETR', file: data.file, content };
+        }
+        const file = (data.file ?? '').slice(0, 100);
+        if (!file) return { app: 'ftp', command: 'STOR', error: 'A file name is required' };
+        if (!(file in svc.ftp.files) && Object.keys(svc.ftp.files).length >= 200) return { app: 'ftp', command: 'STOR', error: 'File limit reached' };
+        svc.ftp.files[file] = (data.content ?? '').slice(0, 64 * 1024);
+        return { app: 'ftp', command: 'STOR', file, response: 'File stored' };
+      };
+    }
+    if (svc?.mail.enabled && port === 25) {
+      return (data) => {
+        if (data?.app !== 'smtp') return { app: 'smtp', command: 'SEND', from: '', to: '', subject: '', body: '', accepted: false, reason: 'Invalid SMTP request' };
+        if (!data.from || !data.to) return { ...data, accepted: false, reason: 'Sender and recipient are required' };
+        if (data.from.length > 254 || data.to.length > 254 || data.subject.length > 998 || data.body.length > 64 * 1024) {
+          return { ...data, accepted: false, reason: 'Message exceeds the server limits' };
+        }
+        if (svc.mail.messages.length >= 500) return { ...data, accepted: false, reason: 'Mailbox storage limit reached' };
+        svc.mail.messages.push({ from: data.from, to: data.to, subject: data.subject, body: data.body });
+        return { ...data, accepted: true };
+      };
+    }
+    if (svc?.mail.enabled && port === 110) {
+      return (data) => {
+        if (data?.app !== 'pop3') return { app: 'pop3', command: 'LIST', mailbox: '', error: 'Invalid POP3 request' };
+        const messages = svc.mail.messages.filter((m) => m.to.toLowerCase() === data.mailbox.toLowerCase());
+        if (data.command === 'LIST') return { app: 'pop3', command: 'LIST', mailbox: data.mailbox, messages: messages.map(({ from, subject }) => ({ from, subject })) };
+        const index = (data.index ?? 0) - 1;
+        const message = messages[index];
+        return message
+          ? { app: 'pop3', command: 'RETR', mailbox: data.mailbox, index: data.index, message }
+          : { app: 'pop3', command: 'RETR', mailbox: data.mailbox, index: data.index, error: 'Message not found' };
+      };
+    }
     const c = d.ios;
     if (c && d.doc.powered) {
       const t = c.vty.transport;
@@ -141,12 +200,53 @@ export class Apps {
   tcp(d: RtDevice, p: Ipv4Pkt): void {
     const t = p.tcp!;
     const handler = this.listening(d, t.dport);
-    const send = (flags: 'SYN-ACK' | 'RST' | 'PSH-ACK', data?: AppData) =>
-      this.net.originate(d, { src: p.dst, dst: p.src, ttl: this.net.defaultTtl(d), proto: 'tcp', id: this.net.nextIpId(), tcp: { sport: t.dport, dport: t.sport, flags, seq: t.ack, ack: t.seq + 1, ...(data ? { data } : {}) } });
-    if (t.flags === 'SYN') return void send(handler ? 'SYN-ACK' : 'RST');
+    const send = (flags: 'SYN-ACK' | 'FIN-ACK' | 'RST' | 'PSH-ACK', data?: AppData, seq = t.ack, ack = t.seq + 1) =>
+      this.net.originate(d, { src: p.dst, dst: p.src, ttl: this.net.defaultTtl(d), proto: 'tcp', id: this.net.nextIpId(), tcp: { sport: t.dport, dport: t.sport, flags, seq, ack, ...(data ? { data } : {}) } });
+    const key = `${p.src}|${t.sport}|${p.dst}|${t.dport}`;
+    if (t.flags === 'SYN') {
+      if (!handler) return void send('RST', undefined, 5000);
+      const current = this.tcpConnections.get(key);
+      const conn = current ?? { state: 'syn-received', clientNext: t.seq + 1, serverNext: 5001 };
+      this.tcpConnections.set(key, conn);
+      return void send('SYN-ACK', undefined, 5000, t.seq + 1);
+    }
+    const conn = this.tcpConnections.get(key);
+    if (t.flags === 'RST') {
+      this.tcpConnections.delete(key);
+      return;
+    }
+    if (!handler || !conn) return void send('RST');
+    if (t.flags === 'ACK') {
+      if (conn.state === 'syn-received' && t.seq === conn.clientNext && t.ack === conn.serverNext) conn.state = 'established';
+      else if (conn.state === 'closing' && t.seq === conn.clientNext && t.ack === conn.serverNext) this.tcpConnections.delete(key);
+      return;
+    }
     if (t.flags === 'PSH-ACK') {
-      if (!handler) return void send('RST');
-      send('PSH-ACK', handler(t.data));
+      if (conn.state !== 'established') return void send('RST');
+      if (t.seq === conn.lastRequestSeq && t.ack === conn.lastResponseSeq && conn.lastResponse) {
+        return void send('PSH-ACK', conn.lastResponse, conn.lastResponseSeq, conn.lastResponseAck);
+      }
+      if (t.seq !== conn.clientNext || t.ack !== conn.serverNext) return void send('RST');
+      const response = handler(t.data);
+      conn.lastRequestSeq = t.seq;
+      conn.lastResponse = response;
+      conn.lastResponseSeq = conn.serverNext;
+      conn.lastResponseAck = t.seq + 1;
+      conn.clientNext = t.seq + 1;
+      conn.serverNext += 1;
+      send('PSH-ACK', response, conn.lastResponseSeq, conn.lastResponseAck);
+      return;
+    }
+    if (t.flags === 'FIN') {
+      if (conn.state === 'closing' && t.seq === conn.clientNext - 1 && conn.finAck) {
+        return void send('FIN-ACK', undefined, conn.finAck.seq, conn.finAck.ack);
+      }
+      if (conn.state !== 'established' || t.seq !== conn.clientNext || t.ack !== conn.serverNext) return void send('RST');
+      conn.finAck = { seq: conn.serverNext, ack: t.seq + 1 };
+      conn.clientNext = t.seq + 1;
+      conn.serverNext += 1;
+      conn.state = 'closing';
+      send('FIN-ACK', undefined, conn.finAck.seq, conn.finAck.ack);
     }
   }
 }

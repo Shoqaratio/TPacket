@@ -65,22 +65,24 @@
 | TTL et traceroute (UDP IOS, ICMP Windows) | Testée (TPacket) | |
 | Routage inter-VLAN (router-on-a-stick, SVI) | Testée (TPacket) | |
 | ACL standard / étendues numérotées et nommées (ip, icmp, tcp, udp, `eq`) | Testée (TPacket) | |
-| RIPv1/v2 | Partielle (testée TPacket) | Calcul de l'état convergé (Bellman-Ford), split horizon, `passive-interface`, `auto-summary` et compatibilité de versions ; pas de paquets UDP 520 ni de temporisation de convergence |
-| OSPFv2 mono-zone | Partielle (testée TPacket) | Adjacences dérivées des domaines de diffusion L2, même aire/masque, détection de router-id dupliqué, DR/BDR et SPF ; pas de Hello/LSA simulés ni de délai de convergence |
-| NAT / PAT | Partielle (testée TPacket) | NAT statique, pools et surcharge PAT ; traduction appliquée au trafic simulé, pas à des paquets externes |
+| RIPv1/v2 | Partielle (testée TPacket) | Bellman-Ford, split horizon, `passive-interface`, `auto-summary` et compatibilité de versions ; mises à jour UDP 520 IPv1 broadcast/IPv2 multicast émises/livrées sur L2 et répétées toutes les 30 s. Pas de hold-down ni d'installation différée |
+| OSPFv2 mono-zone | Partielle (testée TPacket) | Hello/LSA IP 89 multicast émis/livrés sur L2 ; Hello répété toutes les 10 s ; voisinage, aire/masque, router-id, DR/BDR et SPF. Pas de dead timer ni de convergence différée |
+| NAT / PAT | Testée (TPacket) | NAT statique, pools et surcharge PAT ; trafic de bout en bout entre réseaux simulés. Le moteur n'ouvre volontairement aucune socket vers Internet |
 | IPv6, ICMPv6, NDP | Testée (TPacket) | Adresses statiques, link-local EUI-64, SLAAC et DHCPv6 stateful (préfixe) ; pas de bail/renouvellement DHCPv6 complet, DNS IPv6 côté client ni SLAAC privacy extensions |
-| OSPFv3 | Partielle (testée TPacket) | Un processus par routeur, aire configurée par interface, adjacences via le domaine L2 et SPF IPv6 ; état convergé calculé, sans paquets Hello/LSA ni délai de convergence |
+| OSPFv3 | Partielle (testée TPacket) | Hello/LSA IPv6 multicast IP 89 livrés sur L2 ; Hello répété toutes les 10 s. Un processus par routeur, aire configurée par interface, adjacences et SPF IPv6 ; routes calculées à l'état convergé, sans dead timer ni installation progressive |
 
 ## Couches 4–7
 
 | Élément | Statut | Notes |
 | --- | --- | --- |
-| TCP / UDP | Partielle (testée TPacket) | TCP minimal (SYN, SYN-ACK, PSH-ACK, RST) avec retransmissions ; UDP applicatif avec retransmissions. Pas d'implémentation complète de TCP (FIN/congestion, etc.) |
+| TCP / UDP | Partielle (testée TPacket) | TCP : handshake et état serveur, séquences de contrôle, requête/réponse, FIN/FIN-ACK et retransmissions SYN/données/FIN ; doublons de requête idempotents. Charge utile abstraite (pas de segmentation, fenêtre, congestion ou numéros d'octets complets). UDP applicatif avec retransmissions |
 | DHCP | Partielle (testée TPacket) | Pools IOS, service serveur, relais `ip helper-address`, renouvellement client et APIPA ; pas de temporisation/DORA détaillée en paquets visibles |
 | DNS | Partielle (testée TPacket) | Enregistrements côté serveur, `nslookup` et résolution pour ping/navigateur ; pas de cache/recursion réaliste |
 | HTTP(S), TFTP | Partielle (testée TPacket) | Navigation simulée et transfert TFTP ; le navigateur intégré utilise un iframe sandboxé pour afficher le contenu |
 | Telnet / SSH | Partielle (testée TPacket) | Accès VTY simulé avec règles IOS ; pas de vrai terminal réseau ni de chiffrement SSH |
-| FTP, SMTP/POP3, NTP | Non implémentée | |
+| FTP | Partielle (testée TPacket) | Liste, lecture et écriture de fichiers via opérations TCP simulées ; canal de contrôle/données FTP complet, modes actif/passif et authentification non implémentés |
+| SMTP / POP3 | Partielle (testée TPacket) | Envoi, boîte aux lettres simulée et lecture par index via échanges TCP abstraits ; pas de dialogue RFC, authentification ni TLS |
+| NTP | Partielle (testée TPacket) | Réponse UDP avec l'horloge virtuelle en millisecondes ; pas de datagramme NTP RFC ni d'heure civile |
 
 ## CLI IOS
 

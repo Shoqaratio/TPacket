@@ -10,9 +10,14 @@
  *  - OSPF forms adjacencies (same area, same mask, distinct router-ids, non-passive), elects the
  *    DR, and runs SPF with interface costs (reference bandwidth 100 Mbit/s).
  */
-import { classfulMask, ipToString, networkOf, wildcardMatch } from '../net/ipv4';
+import { BROADCAST_IP, classfulMask, ipToString, networkOf, parseIp, wildcardMatch } from '../net/ipv4';
 import { ip6ToString, network6 } from '../net/ipv6';
 import type { L3If, L3If6, Network, Route, Route6, RtDevice } from './network';
+
+const RIP_V2_GROUP = parseIp('224.0.0.9')!;
+const OSPF_ALL_ROUTERS = parseIp('224.0.0.5')!;
+const RIP_V2_MAC = '01005e000009';
+const OSPF_ALL_ROUTERS_MAC = '01005e000005';
 
 export interface OspfNeighbor {
   routerId: number;
@@ -85,6 +90,16 @@ export function computeDynamic(net: Network): DynamicResult {
   // ------------------------------------------------------------------------------ RIP
   type RipEntry = { network: number; mask: number; metric: number; nextHop?: number; iface?: string };
   const ripDb = new Map<string, Map<string, RipEntry>>();
+  const ripPeriodic = new Set<string>();
+  const ripLatest = new Map<string, { dev: RtDevice; iface: L3If; version: 1 | 2; routes: RipEntry[] }>();
+  const emitRip = (state: { dev: RtDevice; iface: L3If; version: 1 | 2; routes: RipEntry[] }) => {
+    const dst = state.version === 1 ? BROADCAST_IP : RIP_V2_GROUP;
+    const mac = state.version === 1 ? 'ffffffffffff' : RIP_V2_MAC;
+    net.sendFrame(state.dev, state.iface.name, mac, {
+      src: state.iface.ip, dst, ttl: 1, proto: 'udp', id: net.nextIpId(),
+      udp: { sport: 520, dport: 520, data: { app: 'rip', version: state.version, routes: state.routes.map(({ network, mask, metric }) => ({ network, mask, metric })) } },
+    });
+  };
   const ripRouters = routers.filter((d) => d.ios!.rip);
   for (const d of ripRouters) {
     const db = new Map<string, RipEntry>();
@@ -118,12 +133,29 @@ export function computeDynamic(net: Network): DynamicResult {
           const cur = update.get(k);
           if (!cur || e.metric < cur.metric) update.set(k, { network, mask, metric: e.metric });
         }
-        for (const nb of domain(x, a)) {
+        const recipients = domain(x, a).filter((nb) => {
+          const cy = nb.dev.ios?.rip;
+          return !!cy && net.routingEnabled(nb.dev) && ripEnabled(cy, nb.iface) &&
+            networkOf(nb.iface.ip, nb.iface.mask) === networkOf(a.ip, a.mask) &&
+            (cy.version === undefined || cy.version === sendVersion);
+        });
+        if (update.size && recipients.length) {
+          const key = `${x.doc.id}|${a.name}`;
+          const state = { dev: x, iface: a, version: sendVersion, routes: [...update.values()] };
+          ripLatest.set(key, state);
+          emitRip(state);
+          if (!ripPeriodic.has(key)) {
+            ripPeriodic.add(key);
+            const tick = () => {
+              const latest = ripLatest.get(key);
+              if (latest && net.ifUp(latest.dev, latest.iface.name)) emitRip(latest);
+              net.scheduleRoutingTimer(30_000, net.version, tick);
+            };
+            net.scheduleRoutingTimer(30_000, net.version, tick);
+          }
+        }
+        for (const nb of recipients) {
           const y = nb.dev;
-          const cy = y.ios?.rip;
-          if (!cy || !net.routingEnabled(y) || !ripEnabled(cy, nb.iface)) continue;
-          if (networkOf(nb.iface.ip, nb.iface.mask) !== networkOf(a.ip, a.mask)) continue;
-          if (cy.version !== undefined && cy.version !== sendVersion) continue;
           const nbs = res.ripNeighbors.get(y.doc.id) ?? [];
           if (!nbs.includes(a.ip)) nbs.push(a.ip);
           res.ripNeighbors.set(y.doc.id, nbs);
@@ -168,6 +200,19 @@ export function computeDynamic(net: Network): DynamicResult {
     for (const a of upIfs.get(x.doc.id)!) {
       const area = ospfArea(x, a);
       if (area === undefined || x.ios!.ospf!.passive.includes(a.name) || a.name.startsWith('Loopback')) continue;
+      const sendHello = () => {
+        if (!net.ifUp(x, a.name)) return;
+        net.sendFrame(x, a.name, OSPF_ALL_ROUTERS_MAC, {
+          src: a.ip, dst: OSPF_ALL_ROUTERS, ttl: 1, proto: 'ospf', id: net.nextIpId(),
+          ospf: { type: 'HELLO', routerId: ridX, area, mask: a.mask },
+        });
+      };
+      sendHello();
+      const helloTimer = () => {
+        sendHello();
+        net.scheduleRoutingTimer(10_000, net.version, helloTimer);
+      };
+      net.scheduleRoutingTimer(10_000, net.version, helloTimer);
       const segment: { dev: RtDevice; iface: L3If; rid: number }[] = [{ dev: x, iface: a, rid: ridX }];
       for (const nb of domain(x, a)) {
         const y = nb.dev;
@@ -207,6 +252,19 @@ export function computeDynamic(net: Network): DynamicResult {
     }
     if (y.ios!.ospf!.defaultOriginate && y.ios!.staticRoutes.some((r) => r.mask === 0)) list.push({ network: 0, mask: 0, cost: 1 });
     adverts.set(y.doc.id, list);
+  }
+  for (const y of ospfRouters) {
+    const active = new Set((res.ospfNeighbors.get(y.doc.id) ?? []).map((neighbor) => neighbor.iface));
+    const networks = adverts.get(y.doc.id) ?? [];
+    if (!networks.length) continue;
+    for (const i of upIfs.get(y.doc.id)!) {
+      const area = ospfArea(y, i);
+      if (area === undefined || !active.has(i.name)) continue;
+      net.sendFrame(y, i.name, OSPF_ALL_ROUTERS_MAC, {
+        src: i.ip, dst: OSPF_ALL_ROUTERS, ttl: 1, proto: 'ospf', id: net.nextIpId(),
+        ospf: { type: 'LSA', routerId: res.ospfRouterId.get(y.doc.id)!, area, networks: networks.map(({ network, mask, cost }) => ({ network, mask, metric: cost })) },
+      });
+    }
   }
   for (const x of ospfRouters) {
     // Dijkstra
@@ -272,6 +330,13 @@ export function computeDynamic(net: Network): DynamicResult {
     for (const a of upIfs6.get(x.doc.id)!) {
       const area = area6(x, a);
       if (area === undefined || x.ios!.ospf6!.passive.includes(a.name) || a.name.startsWith('Loopback')) continue;
+      const sendHello = () => net.sendOspf6Control(x, a.name, { type: 'HELLO', routerId: ridX, area });
+      sendHello();
+      const helloTimer = () => {
+        sendHello();
+        net.scheduleRoutingTimer(10_000, net.version, helloTimer);
+      };
+      net.scheduleRoutingTimer(10_000, net.version, helloTimer);
       const segment: { dev: RtDevice; iface: L3If6; rid: number }[] = [{ dev: x, iface: a, rid: ridX }];
       for (const nb of net.broadcastDomain6(x, a.name)) {
         const y = nb.dev;
@@ -315,6 +380,21 @@ export function computeDynamic(net: Network): DynamicResult {
     }
     adverts6.set(d.doc.id, adverts);
     res.routes6.set(d.doc.id, []);
+  }
+  for (const d of ospf6Routers) {
+    const active = new Set((res.ospf6Neighbors.get(d.doc.id) ?? []).map((neighbor) => neighbor.iface));
+    const prefixes = adverts6.get(d.doc.id) ?? [];
+    if (!prefixes.length) continue;
+    for (const iface of upIfs6.get(d.doc.id)!) {
+      const area = area6(d, iface);
+      if (area === undefined || !active.has(iface.name)) continue;
+      net.sendOspf6Control(d, iface.name, {
+        type: 'LSA',
+        routerId: routerIds.get(d.doc.id)!,
+        area,
+        prefixes: prefixes.map(({ prefix, len, cost }) => ({ prefix, len, metric: cost })),
+      });
+    }
   }
   for (const x of ospf6Routers) {
     const dist = new Map<string, number>([[x.doc.id, 0]]);

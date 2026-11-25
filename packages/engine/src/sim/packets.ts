@@ -67,6 +67,34 @@ export interface TftpMsg {
   error?: string;
 }
 
+export interface MailMessage {
+  from: string;
+  to: string;
+  subject: string;
+  body: string;
+}
+
+export interface RipRoute {
+  network: number;
+  mask: number;
+  metric: number;
+}
+
+export interface OspfControlMessage {
+  type: 'HELLO' | 'LSA';
+  routerId: number;
+  area: number;
+  mask?: number;
+  networks?: { network: number; mask: number; metric: number }[];
+}
+
+export interface Ospf6ControlMessage {
+  type: 'HELLO' | 'LSA';
+  routerId: number;
+  area: number;
+  prefixes?: { prefix: bigint; len: number; metric: number }[];
+}
+
 /** Application payloads carried by UDP/TCP. */
 export type AppData =
   | { app: 'dhcp'; dhcp: DhcpMsg }
@@ -74,6 +102,11 @@ export type AppData =
   | { app: 'dns'; dns: DnsMsg }
   | { app: 'tftp'; tftp: TftpMsg }
   | { app: 'http'; method?: string; path?: string; status?: number; body?: string; secure?: boolean }
+  | { app: 'ftp'; command: 'LIST' | 'RETR' | 'STOR'; file?: string; content?: string; files?: string[]; response?: string; error?: string }
+  | ({ app: 'smtp'; command: 'SEND'; accepted?: boolean; reason?: string } & MailMessage)
+  | { app: 'pop3'; command: 'LIST' | 'RETR'; mailbox: string; index?: number; messages?: { from: string; subject: string }[]; message?: MailMessage; error?: string }
+  | { app: 'ntp'; serverTime?: number }
+  | { app: 'rip'; version: 1 | 2; routes: RipRoute[] }
   | { app: 'vty'; proto: 'telnet' | 'ssh'; user?: string; accepted?: boolean; reason?: string };
 
 export interface UdpPkt {
@@ -82,7 +115,7 @@ export interface UdpPkt {
   data?: AppData;
 }
 
-export type TcpFlags = 'SYN' | 'SYN-ACK' | 'ACK' | 'PSH-ACK' | 'FIN' | 'RST';
+export type TcpFlags = 'SYN' | 'SYN-ACK' | 'ACK' | 'PSH-ACK' | 'FIN' | 'FIN-ACK' | 'RST';
 
 export interface TcpSeg {
   sport: number;
@@ -93,7 +126,7 @@ export interface TcpSeg {
   data?: AppData;
 }
 
-export type IpProto = 'icmp' | 'udp' | 'tcp';
+export type IpProto = 'icmp' | 'udp' | 'tcp' | 'ospf';
 
 export interface Ipv4Pkt {
   src: number;
@@ -104,6 +137,7 @@ export interface Ipv4Pkt {
   icmp?: IcmpPkt;
   udp?: UdpPkt;
   tcp?: TcpSeg;
+  ospf?: OspfControlMessage;
 }
 
 /** IPv6 datagram (ICMPv6 and UDP for DHCPv6). */
@@ -113,6 +147,7 @@ export interface Ipv6Pkt {
   hop: number;
   icmp6?: { type: number; code: number; ident?: number; seq?: number; target?: bigint; lladdr?: string; quote?: { ident?: number; seq?: number }; prefix?: { network: bigint; len: number }; managed?: boolean };
   udp?: UdpPkt;
+  ospf6?: Ospf6ControlMessage;
 }
 
 export interface Frame {
@@ -130,12 +165,13 @@ export interface Frame {
   hops: number;
 }
 
-const APP_PORTS: Record<number, string> = { 67: 'DHCP', 68: 'DHCP', 53: 'DNS', 69: 'TFTP', 80: 'HTTP', 443: 'HTTPS', 23: 'TELNET', 22: 'SSH' };
+const APP_PORTS: Record<number, string> = { 67: 'DHCP', 68: 'DHCP', 53: 'DNS', 69: 'TFTP', 80: 'HTTP', 443: 'HTTPS', 23: 'TELNET', 22: 'SSH', 21: 'FTP', 25: 'SMTP', 110: 'POP3', 123: 'NTP', 520: 'RIP' };
 
 export function protoOf(f: Frame): string {
   if (f.type === 'arp') return 'ARP';
   if (f.type === 'ipv6') {
     const p = f.ip6!;
+    if (p.ospf6) return 'OSPFv3';
     if (p.udp) return p.udp.data?.app === 'dhcp6' ? 'DHCPv6' : 'UDPv6';
     if (!p.icmp6) return 'IPv6';
     const t = p.icmp6.type;
@@ -143,6 +179,7 @@ export function protoOf(f: Frame): string {
   }
   const p = f.ip!;
   if (p.proto === 'icmp') return 'ICMP';
+  if (p.proto === 'ospf') return 'OSPF';
   if (p.udp) return APP_PORTS[p.udp.dport] ?? APP_PORTS[p.udp.sport] ?? 'UDP';
   if (p.tcp) return APP_PORTS[p.tcp.dport] ?? APP_PORTS[p.tcp.sport] ?? 'TCP';
   return p.proto.toUpperCase();
@@ -164,6 +201,7 @@ export function describeFrame(f: Frame): string {
   }
   if (f.type === 'ipv6') {
     const p = f.ip6!;
+    if (p.ospf6) return `OSPFv3 ${p.ospf6.type} RID ${ipToString(p.ospf6.routerId)} AREA ${p.ospf6.area} ${ip6ToString(p.src)} > ${ip6ToString(p.dst)} HL=${p.hop}`;
     if (p.udp) return `UDPv6 ${p.udp.sport} > ${p.udp.dport}${p.udp.data?.app === 'dhcp6' ? ` DHCPv6 ${p.udp.data.dhcp6.op}` : ''} ${ip6ToString(p.src)} > ${ip6ToString(p.dst)} HL=${p.hop}`;
     if (!p.icmp6) return `IPv6 ${ip6ToString(p.src)} > ${ip6ToString(p.dst)} HL=${p.hop}`;
     const t = ICMP6_TYPES[p.icmp6.type] ?? `type ${p.icmp6.type}`;
@@ -172,6 +210,7 @@ export function describeFrame(f: Frame): string {
   const p = f.ip!;
   const head = `${ipToString(p.src)} > ${ipToString(p.dst)} TTL=${p.ttl}`;
   if (p.proto === 'icmp') return `ICMP ${ICMP_TYPES[p.icmp!.type] ?? `type ${p.icmp!.type}`} ${head}`;
+  if (p.proto === 'ospf') return `OSPF ${p.ospf!.type} RID ${ipToString(p.ospf!.routerId)} AREA ${p.ospf!.area} ${head}`;
   if (p.udp) {
     const d = p.udp.data;
     const extra = d?.app === 'dhcp' ? ` DHCP ${d.dhcp.op}` : d?.app === 'dns' ? ` DNS ${d.dns.response ? 'response' : 'query'} ${d.dns.qname}` : d?.app === 'tftp' ? ` TFTP ${d.tftp.op} ${d.tftp.file}` : '';

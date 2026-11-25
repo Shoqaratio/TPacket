@@ -36,6 +36,12 @@ describe('RIP', () => {
     expect(pingOk(net, a.id, '192.168.3.10')).toBe(true);
     const rt = cli(net, r[0]!.id, ['enable', 'show ip route']);
     expect(rt).toMatch(/R\s+192\.168\.3\.0\/24 \[120\/2\] via 10\.0\.12\.2, GigabitEthernet0\/1/);
+    const ripUpdate = net.log.find((event) => event.kind === 'deliver' && event.proto === 'RIP' && event.frame.ip?.udp?.dport === 520);
+    expect(ripUpdate?.frame.ip).toMatchObject({ dst: parseIp('224.0.0.9'), ttl: 1, udp: { sport: 520, dport: 520, data: { app: 'rip', version: 2 } } });
+    expect(ripUpdate?.frame.ip?.udp?.data).toMatchObject({ routes: expect.arrayContaining([{ network: parseIp('192.168.1.0'), mask: parseIp('255.255.255.0'), metric: 0 }]) });
+    const updatesBeforeTimer = net.log.filter((event) => event.kind === 'deliver' && event.proto === 'RIP').length;
+    net.advance(30_100);
+    expect(net.log.filter((event) => event.kind === 'deliver' && event.proto === 'RIP').length).toBeGreaterThan(updatesBeforeTimer);
     expect(cli(net, r[0]!.id, ['enable', 'show ip protocols'])).toContain('Routing Protocol is "rip"');
     cli(net, r[1]!.id, ['enable', 'conf t', 'router rip', 'passive-interface g0/1', 'end']);
     expect(net.routes(net.dev(r[0]!.id)).some((x) => x.type === 'R' && x.network === parseIp('192.168.3.0'))).toBe(false);
@@ -47,6 +53,15 @@ describe('RIP', () => {
     cli(net, r[1]!.id, ['enable', 'conf t', 'router rip', 'version 1', 'network 10.0.0.0', 'end']);
     expect(net.routes(net.dev(r[1]!.id)).some((x) => x.type === 'R')).toBe(false);
   });
+
+  it('RIPv1 sends classful updates as limited broadcasts', () => {
+    const { net, r0, r1, p0 } = twoRouters({ routes: false });
+    cli(net, r0.id, ['enable', 'conf t', 'router rip', 'version 1', 'network 10.0.0.0', 'network 192.168.1.0', 'end']);
+    cli(net, r1.id, ['enable', 'conf t', 'router rip', 'version 1', 'network 10.0.0.0', 'network 192.168.2.0', 'end']);
+    expect(pingOk(net, p0.id, '192.168.2.10')).toBe(true);
+    const update = net.log.find((event) => event.kind === 'deliver' && event.proto === 'RIP');
+    expect(update?.frame.ip).toMatchObject({ dst: 0xffffffff, udp: { dport: 520, data: { app: 'rip', version: 1 } } });
+  });
 });
 
 describe('OSPF', () => {
@@ -56,6 +71,13 @@ describe('OSPF', () => {
     expect(pingOk(net, a.id, '192.168.3.10')).toBe(true);
     expect(cli(net, r[0]!.id, ['enable', 'show ip route'])).toMatch(/O\s+192\.168\.3\.0\/24 \[110\/3\] via 10\.0\.12\.2/);
     expect(cli(net, r[1]!.id, ['enable', 'show ip ospf neighbor'])).toMatch(/FULL\/(DR|BDR)/);
+    const hello = net.log.find((event) => event.kind === 'deliver' && event.proto === 'OSPF' && event.frame.ip?.ospf?.type === 'HELLO');
+    const lsa = net.log.find((event) => event.kind === 'deliver' && event.proto === 'OSPF' && event.frame.ip?.ospf?.type === 'LSA');
+    expect(hello?.frame.ip).toMatchObject({ dst: parseIp('224.0.0.5'), ttl: 1, ospf: { type: 'HELLO', area: 0 } });
+    expect(lsa?.frame.ip).toMatchObject({ dst: parseIp('224.0.0.5'), ttl: 1, ospf: { type: 'LSA', area: 0 } });
+    const hellosBeforeTimer = net.log.filter((event) => event.kind === 'deliver' && event.frame.ip?.ospf?.type === 'HELLO').length;
+    net.advance(10_100);
+    expect(net.log.filter((event) => event.kind === 'deliver' && event.frame.ip?.ospf?.type === 'HELLO').length).toBeGreaterThan(hellosBeforeTimer);
     cli(net, r[2]!.id, ['enable', 'conf t', 'router ospf 1', 'no network 10.0.0.0 0.255.255.255 area 0', 'network 10.0.0.0 0.255.255.255 area 1', 'end']);
     expect(pingOk(net, a.id, '192.168.3.10')).toBe(false);
   });
@@ -151,6 +173,17 @@ describe('DNS, HTTP, TFTP', () => {
     const { net, p0, server } = withServer();
     const dst = parseIp('192.168.2.100')!;
     expect(pingOk(net, p0.id, '192.168.2.100')).toBe(true);
+    const transaction = net.tcpTransaction(p0.id, dst, 80, { app: 'http', method: 'GET', path: '/' });
+    expect(transaction).toMatchObject({ kind: 'data', data: { app: 'http', status: 200 } });
+    const tcpSegments = net.log.flatMap((event) => {
+      const segment = event.frame.ip?.tcp;
+      return segment ? [{ device: event.device, flags: segment.flags, seq: segment.seq, ack: segment.ack }] : [];
+    });
+    expect(tcpSegments.map(({ flags }) => flags)).toEqual(expect.arrayContaining(['SYN', 'SYN-ACK', 'ACK', 'PSH-ACK', 'FIN', 'FIN-ACK']));
+    expect(tcpSegments).toContainEqual({ device: p0.id, flags: 'FIN', seq: 1002, ack: 5002 });
+    expect(tcpSegments).toContainEqual({ device: server.id, flags: 'FIN-ACK', seq: 5002, ack: 1003 });
+    expect(tcpSegments).toContainEqual({ device: p0.id, flags: 'ACK', seq: 1003, ack: 5003 });
+
     let tcp: EchoOutcome | undefined;
     const tcpSent = net.injectPdu(p0.id, dst, 'tcp', 80, (result) => { tcp = result; });
     expect(tcpSent.sent).toBe(true);
@@ -166,6 +199,17 @@ describe('DNS, HTTP, TFTP', () => {
     expect(net.log.some((event) => event.device === server.id && event.proto === 'DNS')).toBe(true);
   });
 
+  it('rejects TCP application data that arrives without a completed handshake', () => {
+    const { net, p0, server } = withServer();
+    expect(pingOk(net, p0.id, '192.168.2.100')).toBe(true);
+    net.originate(net.dev(p0.id), {
+      src: 0, dst: parseIp('192.168.2.100')!, ttl: 64, proto: 'tcp', id: 7000,
+      tcp: { sport: 50000, dport: 80, flags: 'PSH-ACK', seq: 1001, ack: 5001, data: { app: 'http', method: 'GET', path: '/' } },
+    });
+    net.advance(10_000);
+    expect(net.log.some((event) => event.device === server.id && event.frame.ip?.tcp?.flags === 'RST'), JSON.stringify(net.log.map((event) => [event.device, event.kind, event.proto, event.info, event.reason?.code]))).toBe(true);
+  });
+
   it('copy running-config tftp then copy tftp running-config', () => {
     const { net, r0, server } = withServer();
     cli(net, r0.id, ['enable', 'conf t', 'banner motd #saved#', 'end']);
@@ -175,6 +219,36 @@ describe('DNS, HTTP, TFTP', () => {
     cli(net, r0.id, ['enable', 'conf t', 'no banner motd', 'end']);
     cli(net, r0.id, ['enable', 'copy tftp running-config', '192.168.2.100', 'r0-confg', '']);
     expect(net.dev(r0.id).ios!.bannerMotd).toBe('saved');
+  });
+});
+
+describe('FTP, SMTP, POP3 and NTP', () => {
+  it('transfers files, sends and retrieves mail, and serves the simulation clock', async () => {
+    const t = twoRouters();
+    const server = t.net.addDevice('Server', 0, 0);
+    const link = t.net.doc.links.find((l) => l.a.device === t.p1.id || l.b.device === t.p1.id)!;
+    const sw = link.a.device === t.p1.id ? link.b.device : link.a.device;
+    t.net.addLink('straight', { device: server.id, port: 'FastEthernet0' }, { device: sw, port: 'FastEthernet0/5' });
+    setHost(t.net, server.id, '192.168.2.100', '255.255.255.0', '192.168.2.1');
+    t.net.converge();
+    const services = t.net.dev(server.id).doc.services!;
+    services.ftp.files['welcome.txt'] = 'Welcome to the FTP server';
+    services.mail.enabled = true;
+    const host = new HostPrompt(t.net, t.p0.id);
+
+    expect(host.input('ftp 192.168.2.100 list')).toBe('welcome.txt');
+    expect(host.input('ftp 192.168.2.100 get welcome.txt')).toBe('Welcome to the FTP server');
+    expect(host.input('ftp 192.168.2.100 put upload.txt sent over tcp')).toBe('File stored');
+    expect(services.ftp.files['upload.txt']).toBe('sent over tcp');
+    expect(host.input('mail 192.168.2.100 send alice@example.test bob@example.test Lab Hello from NetLab')).toBe('Message accepted by SMTP server.');
+    expect(host.input('mail 192.168.2.100 check bob@example.test')).toBe('1 alice@example.test Lab');
+    expect(host.input('mail 192.168.2.100 check bob@example.test 1')).toContain('Hello from NetLab');
+    expect(host.input('ntp 192.168.2.100')).toMatch(/^NTP time synchronized: \d+ ms \(simulation clock\)\.$/);
+
+    const { Network, validateProject } = await import('../src');
+    const copy = new Network(validateProject(structuredClone(t.net.serialize())));
+    expect(copy.dev(server.id).doc.services?.ftp.files['upload.txt']).toBe('sent over tcp');
+    expect(copy.dev(server.id).doc.services?.mail.messages).toHaveLength(1);
   });
 });
 
@@ -225,6 +299,23 @@ describe('NAT / PAT', () => {
     void p0;
     expect(pingOk(net, p1.id, '10.0.0.5')).toBe(true);
   });
+
+  it('dynamic pool NAT translates traffic across a simulated outside network', () => {
+    const { net, r0, p0, p1 } = twoRouters({ routes: false });
+    cli(net, r0.id, [
+      'enable', 'conf t',
+      'access-list 1 permit 192.168.1.0 0.0.0.255',
+      'ip nat pool PUB 10.0.0.5 10.0.0.6 netmask 255.255.255.252',
+      'ip nat inside source list 1 pool PUB',
+      'int g0/0', 'ip nat inside',
+      'int s0/0/0', 'ip nat outside',
+      'ip route 0.0.0.0 0.0.0.0 10.0.0.2', 'end',
+    ]);
+    cli(net, net.doc.devices[1]!.id, ['enable', 'conf t', 'ip route 10.0.0.4 255.255.255.252 10.0.0.1', 'end']);
+
+    expect(pingOk(net, p0.id, '192.168.2.10')).toBe(true);
+    expect(cli(net, r0.id, ['enable', 'show ip nat translations'])).toMatch(/icmp 10\.0\.0\.5:\d+\s+192\.168\.1\.10:/);
+  });
 });
 
 describe('IPv6', () => {
@@ -250,6 +341,13 @@ describe('IPv6', () => {
     expect(pc(net, a.id, 'ping 2001:db8:20::10')).toContain('Reply from 2001:DB8:20::10');
     expect(cli(net, r0.id, ['enable', 'show ipv6 ospf neighbor'])).toContain('2.2.2.2');
     expect(cli(net, r0.id, ['enable', 'show ipv6 route'])).toContain('O   2001:DB8:20::/64 [110/');
+    const hello = net.log.find((event) => event.kind === 'deliver' && event.proto === 'OSPFv3' && event.frame.ip6?.ospf6?.type === 'HELLO');
+    const lsa = net.log.find((event) => event.kind === 'deliver' && event.proto === 'OSPFv3' && event.frame.ip6?.ospf6?.type === 'LSA');
+    expect(hello?.frame.ip6?.hop).toBe(1);
+    expect(lsa?.frame.ip6?.ospf6?.prefixes).toEqual(expect.arrayContaining([expect.objectContaining({ len: 64 })]));
+    const hellosBeforeTimer = net.log.filter((event) => event.kind === 'deliver' && event.proto === 'OSPFv3' && event.frame.ip6?.ospf6?.type === 'HELLO').length;
+    net.advance(10_100);
+    expect(net.log.filter((event) => event.kind === 'deliver' && event.proto === 'OSPFv3' && event.frame.ip6?.ospf6?.type === 'HELLO').length).toBeGreaterThan(hellosBeforeTimer);
   });
 
   it('autoconfigures a host with SLAAC and DHCPv6 and forwards IPv6 traffic', () => {

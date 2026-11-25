@@ -30,20 +30,24 @@ Le périmètre livré est couvert par des tests de comportement ; « terminé »
 annoncé fonctionne, pas une émulation complète ni une compatibilité 1:1 avec Packet Tracer. Les écarts
 restants sont explicités dans `COMPATIBILITY.md`.
 - ✅ VLAN, trunk 802.1Q, DTP, STP, routage inter-VLAN, ACL numérotées et nommées (standard/étendues), mode simulation, inspection.
-- 🟡 **RIPv1/v2** : tests de routage, version et interface passive ; état convergé calculé (Bellman-Ford), split horizon, `passive-interface`,
-  `auto-summary`, compatibilité de versions et `show ip protocols`. Pas de paquets UDP 520 ni de
-  temporisation de convergence.
-- 🟡 **OSPFv2 mono-zone** : tests d’adjacence, de routes et d’aire ; adjacences via le domaine de diffusion L2, aire/masque, router-id,
-  DR/BDR et SPF. Pas de Hello/LSA simulés ni de délai de convergence.
-- 🟡 **TCP et services** : tests TCP/UDP, DHCP, DNS, HTTP, TFTP et VTY ; TCP minimal avec retransmissions ; DHCP (pools IOS/serveur, relais et
-  client), DNS, TFTP, HTTP(S), Telnet/SSH VTY. Pas de FTP/SMTP/POP3/NTP ni de pile TCP complète.
-- 🟡 **NAT/PAT** : tests de NAT statique et PAT ; statique, pools et surcharge PAT.
-- ✅ **IPv6** : tests d’adressage statique, SLAAC, DHCPv6 stateful, NDP, connectivité routée et OSPFv3 ; link-local EUI-64, ICMPv6 et routes statiques ; OSPFv3 (un processus, aires par interface).
+- ✅ **RIPv1/v2** : routage, versions, interfaces passives, Bellman-Ford, split horizon,
+  `auto-summary`, `show ip protocols`, mises à jour UDP 520 broadcast/multicast et répétition
+  périodique (30 s). L'installation expose l'état convergé calculé ; pas de hold-down ni de délai
+  d'installation progressif.
+- ✅ **OSPFv2 mono-zone** : adjacences L2, aire/masque, router-id, DR/BDR, SPF, Hello/LSA IP 89
+  multicast et Hello périodique (10 s). Les routes reflètent l'état convergé calculé ; pas de dead
+  timer ni d'installation progressive depuis une LSDB par étapes.
+- ✅ **TCP et services** : tests de handshake, état de connexion, retransmissions, FTP, SMTP/POP3, NTP,
+  DHCP, DNS, HTTP(S), TFTP et VTY. Le transport reste un sous-ensemble abstrait, sans segmentation,
+  fenêtre ni congestion ; les écarts applicatifs sont détaillés dans `COMPATIBILITY.md`.
+- ✅ **NAT/PAT** : tests de NAT statique, pools et surcharge PAT de bout en bout sur réseau simulé.
+- ✅ **IPv6** : tests d’adressage statique, SLAAC, DHCPv6 stateful, NDP, connectivité routée et OSPFv3 ; link-local EUI-64, ICMPv6, routes statiques et messages périodiques Hello/LSA OSPFv3 (un processus, aires par interface).
 - ✅ PDU complexes ICMP/TCP/UDP et export PCAP Ethernet (trames émises).
 
-Les protocoles de routage affichent l'état convergé calculé : les paquets de contrôle et les
-temporisations de convergence ne sont pas simulés. Les sous-ensembles et écarts sont détaillés dans
-`COMPATIBILITY.md`. Validation locale après la phase 2 : `npm test` (84 tests moteur, 9 tests web),
+Les protocoles de routage émettent et livrent leurs messages de contrôle de base et leurs minuteries
+périodiques. Les routes restent calculées à l'état convergé, plutôt que d'être installées au fil des
+échanges. Les écarts sont détaillés dans
+`COMPATIBILITY.md`. Validation locale après les corrections phase 3 : `npm test` (88 tests moteur, 9 tests web),
 `npx playwright test` (11 tests), `npm run typecheck` et `npm run build`.
 
 ## Phase 4 — Plateforme pédagogique 🟡
