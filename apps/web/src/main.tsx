@@ -80,9 +80,23 @@ function App() {
   }, [me]);
 
   if (!restored) return null;
+  const workspaceOpen = !!(me && active && opened);
+  const screenKey = workspaceOpen ? `workspace-${active}` : `${me ? 'page' : 'auth'}-${page}`;
+  const screen = me && active && opened
+    ? <Workspace key={active} project={active} />
+    : !me ? <Home />
+    : page === 'teacher' ? <TeacherPage />
+    : page === 'student' ? <StudentPage />
+    : page === 'courses' ? <CoursesPage />
+    : page === 'exercises' ? <ExercisesPage />
+    : page === 'profile' ? <ProfilePage />
+    : <Home />;
+
   return (
     <>
-      {me ? active && opened ? <Workspace key={active} project={active} /> : page === 'teacher' ? <TeacherPage /> : page === 'student' ? <StudentPage /> : page === 'courses' ? <CoursesPage /> : page === 'exercises' ? <ExercisesPage /> : page === 'profile' ? <ProfilePage /> : <Home /> : <Home />}
+      <div key={screenKey} className={workspaceOpen ? 'h-full min-h-0' : 'nl-page-enter h-full min-h-0'}>
+        {screen}
+      </div>
       <Toasts />
     </>
   );

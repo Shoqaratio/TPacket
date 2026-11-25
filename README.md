@@ -43,7 +43,7 @@ docker compose up -d --build   # http://localhost:8080 (placer un terminateur TL
 Sur le dépôt GitHub, chaque push sur `main` est déployé après la réussite de CI. Le runner privé
 `tpacket-deploy` est installé sur l'hôte Docker (l'adresse du serveur est privée et n'est pas
 joignable depuis les runners GitHub hébergés). Pendant la reconstruction et le redémarrage, la
-passerelle affiche une page de mise à jour, puis réactive le site après vérification de l'API et du
+passerelle affiche la progression par étapes, puis réactive le site après vérification de l'API et du
 frontend. Les conteneurs API et web sont redémarrés; la passerelle, PostgreSQL et Redis restent actifs.
 Une connexion ou la création d'un compte est nécessaire pour accéder à l'interface et aux projets.
 En cas d'échec, la page reste affichée pour éviter de présenter un service incomplet.

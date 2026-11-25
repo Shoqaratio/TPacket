@@ -22,7 +22,7 @@ export function AcademyNav({ current, me }: { current: Page; me: Me | null }) {
         <button
           key={page}
           aria-current={current === page ? 'page' : undefined}
-          className={`shrink-0 rounded px-3 py-1.5 text-[12px] transition-colors ${current === page ? 'bg-accent/10 font-medium text-accent' : 'text-muted hover:bg-panel2 hover:text-fg'}`}
+          className={`shrink-0 rounded px-3 py-1.5 text-[12px] transition-all duration-200 hover:-translate-y-px ${current === page ? 'bg-accent/10 font-medium text-accent' : 'text-muted hover:bg-panel2 hover:text-fg'}`}
           onClick={() => set({ page })}
         >
           {t(label)}
@@ -31,7 +31,7 @@ export function AcademyNav({ current, me }: { current: Page; me: Me | null }) {
       {canTeach && (
         <button
           aria-current={current === 'teacher' ? 'page' : undefined}
-          className={`shrink-0 rounded px-3 py-1.5 text-[12px] transition-colors ${current === 'teacher' ? 'bg-accent2/15 font-medium text-accent2' : 'text-muted hover:bg-panel2 hover:text-fg'}`}
+          className={`shrink-0 rounded px-3 py-1.5 text-[12px] transition-all duration-200 hover:-translate-y-px ${current === 'teacher' ? 'bg-accent2/15 font-medium text-accent2' : 'text-muted hover:bg-panel2 hover:text-fg'}`}
           onClick={() => set({ page: 'teacher' })}
         >
           {t('teacher.title')}

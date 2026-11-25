@@ -6,6 +6,7 @@ test('academy navigation exposes dashboard, courses, exercises, activities and p
   const nav = page.getByRole('navigation', { name: 'Navigation pédagogique' });
   await expect(nav.getByRole('button', { name: 'Tableau de bord' })).toHaveAttribute('aria-current', 'page');
   await nav.getByRole('button', { name: 'Mes cours' }).click();
+  await expect(page.locator('.nl-page-enter')).toBeVisible();
   await expect(page.getByText('Aucun cours disponible')).toBeVisible();
   await nav.getByRole('button', { name: 'Mes exercices' }).click();
   await expect(page.getByText('Aucun exercice publié')).toBeVisible();

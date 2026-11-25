@@ -4,20 +4,375 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex">
+    <meta http-equiv="refresh" content="30">
     <title>Mise à jour en cours — TPacket</title>
     <style>
-      :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
-      body { display: grid; min-height: 100vh; margin: 0; place-items: center; }
-      main { max-width: 34rem; padding: 2rem; text-align: center; }
-      h1 { font-size: clamp(1.7rem, 5vw, 2.4rem); }
-      p { opacity: .8; }
+      :root {
+        color-scheme: dark;
+        font: 16px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #e7edff;
+        background: #070c17;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        display: grid;
+        min-height: 100vh;
+        margin: 0;
+        padding: 24px;
+        place-items: center;
+        overflow: hidden;
+        background:
+          radial-gradient(ellipse at 50% 0%, rgb(59 130 246 / 16%), transparent 48%),
+          radial-gradient(ellipse at 85% 85%, rgb(139 92 246 / 12%), transparent 36%),
+          #070c17;
+      }
+
+      body::before {
+        position: fixed;
+        inset: 0;
+        background-image: linear-gradient(rgb(255 255 255 / 2%) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 2%) 1px, transparent 1px);
+        background-size: 42px 42px;
+        content: "";
+        mask-image: linear-gradient(to bottom, black, transparent 90%);
+        pointer-events: none;
+      }
+
+      .glow {
+        position: fixed;
+        width: 18rem;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: rgb(59 130 246 / 12%);
+        filter: blur(80px);
+        animation: drift 9s ease-in-out infinite alternate;
+        pointer-events: none;
+      }
+
+      .glow-one { top: 8%; left: 8%; }
+      .glow-two { right: 7%; bottom: 4%; background: rgb(139 92 246 / 12%); animation-delay: -4s; }
+
+      main {
+        position: relative;
+        width: min(100%, 560px);
+        padding: clamp(26px, 6vw, 48px);
+        overflow: hidden;
+        border: 1px solid rgb(135 157 205 / 19%);
+        border-radius: 24px;
+        background: linear-gradient(145deg, rgb(17 28 51 / 94%), rgb(10 17 32 / 96%));
+        box-shadow: 0 30px 100px rgb(0 0 0 / 40%), inset 0 1px rgb(255 255 255 / 5%);
+        text-align: center;
+        animation: arrive 700ms cubic-bezier(.2, .75, .25, 1) both;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 30px;
+        color: #aab8d5;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: .16em;
+        text-transform: uppercase;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 34px;
+        aspect-ratio: 1;
+        place-items: center;
+        border: 1px solid rgb(59 130 246 / 40%);
+        border-radius: 11px;
+        background: linear-gradient(135deg, rgb(59 130 246 / 22%), rgb(139 92 246 / 20%));
+        color: #a5c4ff;
+        font-size: 13px;
+        letter-spacing: -.06em;
+        box-shadow: 0 0 24px rgb(59 130 246 / 16%);
+      }
+
+      .visual {
+        position: relative;
+        display: grid;
+        width: 106px;
+        aspect-ratio: 1;
+        margin: 0 auto 22px;
+        place-items: center;
+      }
+
+      .orbit {
+        position: absolute;
+        inset: 0;
+        border: 1px solid rgb(100 143 232 / 25%);
+        border-radius: 50%;
+        animation: orbit 8s linear infinite;
+      }
+
+      .orbit::before {
+        position: absolute;
+        top: 12px;
+        left: 14px;
+        width: 8px;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: #8b5cf6;
+        box-shadow: 0 0 15px #8b5cf6;
+        content: "";
+      }
+
+      .orbit-two {
+        inset: 12px -8px;
+        border-color: rgb(59 130 246 / 22%);
+        animation-duration: 11s;
+        animation-direction: reverse;
+      }
+
+      .orbit-two::before {
+        top: auto;
+        right: 8px;
+        bottom: 3px;
+        left: auto;
+        width: 6px;
+        background: #60a5fa;
+        box-shadow: 0 0 14px #60a5fa;
+      }
+
+      .core {
+        display: grid;
+        width: 56px;
+        aspect-ratio: 1;
+        place-items: center;
+        border: 1px solid rgb(96 165 250 / 36%);
+        border-radius: 18px;
+        background: linear-gradient(145deg, rgb(59 130 246 / 24%), rgb(139 92 246 / 18%));
+        color: #a9c8ff;
+        box-shadow: 0 0 36px rgb(59 130 246 / 20%);
+        animation: breathe 2.8s ease-in-out infinite;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(24px, 5vw, 32px);
+        font-weight: 720;
+        letter-spacing: -.035em;
+      }
+
+      .description {
+        max-width: 410px;
+        margin: 10px auto 28px;
+        color: #9aa9c5;
+        font-size: 14px;
+      }
+
+      .progress-heading {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 9px;
+        color: #bfcae0;
+        font-size: 12px;
+        text-align: left;
+      }
+
+      #percent {
+        color: #c4b5fd;
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+      }
+
+      .track {
+        height: 9px;
+        overflow: hidden;
+        border: 1px solid rgb(135 157 205 / 15%);
+        border-radius: 99px;
+        background: #080e1b;
+        box-shadow: inset 0 1px 3px rgb(0 0 0 / 45%);
+      }
+
+      .bar {
+        position: relative;
+        width: 2%;
+        height: 100%;
+        overflow: hidden;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #3b82f6, #6366f1 55%, #a78bfa);
+        box-shadow: 0 0 18px rgb(99 102 241 / 48%);
+        transition: width 900ms cubic-bezier(.2, .75, .25, 1), background 300ms;
+      }
+
+      .bar::after {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(100deg, transparent 18%, rgb(255 255 255 / 42%) 50%, transparent 82%);
+        content: "";
+        animation: shimmer 1.8s ease-in-out infinite;
+      }
+
+      .bar.error { background: linear-gradient(90deg, #ef4444, #f97316); }
+
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+        margin-top: 21px;
+      }
+
+      .step {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 7px;
+        color: #64748b;
+        font-size: 10px;
+        transition: color 250ms ease;
+      }
+
+      .step-dot {
+        display: grid;
+        width: 20px;
+        aspect-ratio: 1;
+        place-items: center;
+        border: 1px solid #293650;
+        border-radius: 50%;
+        background: #101a2d;
+        color: transparent;
+        font-size: 11px;
+        transition: border-color 250ms ease, background 250ms ease, color 250ms ease, box-shadow 250ms ease;
+      }
+
+      .step-dot::after { content: ""; }
+      .step.active { color: #cbd5e1; }
+      .step.active .step-dot { border-color: #818cf8; box-shadow: 0 0 13px rgb(99 102 241 / 35%); }
+      .step.done { color: #a5b4fc; }
+      .step.done .step-dot { border-color: #6366f1; background: #4f46e5; color: white; }
+      .step.done .step-dot::after { content: "✓"; }
+
+      .status {
+        min-height: 20px;
+        margin: 22px 0 0;
+        color: #74839f;
+        font-size: 11px;
+      }
+
+      .status.error { color: #fca5a5; }
+
+      @keyframes arrive {
+        from { opacity: 0; transform: translateY(14px) scale(.985); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      @keyframes drift {
+        from { transform: translate3d(-12px, -8px, 0) scale(.9); }
+        to { transform: translate3d(22px, 18px, 0) scale(1.12); }
+      }
+
+      @keyframes orbit { to { transform: rotate(360deg); } }
+      @keyframes breathe { 50% { transform: scale(1.07); box-shadow: 0 0 46px rgb(59 130 246 / 32%); } }
+      @keyframes shimmer { from { transform: translateX(-120%); } to { transform: translateX(120%); } }
+
+      @media (max-width: 420px) {
+        body { padding: 14px; }
+        main { border-radius: 18px; }
+        .steps { gap: 2px; }
+        .step { font-size: 9px; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: .01ms !important;
+          animation-iteration-count: 1 !important;
+          scroll-behavior: auto !important;
+          transition-duration: .01ms !important;
+        }
+      }
     </style>
-    <meta http-equiv="refresh" content="30">
   </head>
   <body>
+    <div class="glow glow-one" aria-hidden="true"></div>
+    <div class="glow glow-two" aria-hidden="true"></div>
     <main>
-      <h1>Mise à jour en cours</h1>
-      <p>TPacket redémarre avec la dernière version. La page se rechargera automatiquement.</p>
+      <div class="brand"><span class="brand-mark">TP</span><span>TPacket Academy</span></div>
+      <div class="visual" aria-hidden="true">
+        <div class="orbit"></div>
+        <div class="orbit orbit-two"></div>
+        <div class="core">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v5m0 8v5M3 12h5m8 0h5" />
+            <circle cx="12" cy="12" r="4" />
+            <circle cx="12" cy="3" r="1" /><circle cx="21" cy="12" r="1" /><circle cx="12" cy="21" r="1" /><circle cx="3" cy="12" r="1" />
+          </svg>
+        </div>
+      </div>
+      <h1 id="title">Mise à jour en cours</h1>
+      <p class="description" id="description">TPacket redémarre avec la dernière version. La page se rechargera automatiquement.</p>
+      <div class="progress-heading">
+        <span id="phase" aria-live="polite">Préparation du déploiement</span>
+        <span id="percent">0 %</span>
+      </div>
+      <div class="track" id="progress" role="progressbar" aria-label="Progression de la mise à jour" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="bar" id="bar"></div>
+      </div>
+      <ol class="steps" aria-label="Étapes du déploiement">
+        <li class="step" data-step="0"><span class="step-dot" aria-hidden="true"></span><span>Préparation</span></li>
+        <li class="step" data-step="1"><span class="step-dot" aria-hidden="true"></span><span>Construction</span></li>
+        <li class="step" data-step="2"><span class="step-dot" aria-hidden="true"></span><span>Redémarrage</span></li>
+        <li class="step" data-step="3"><span class="step-dot" aria-hidden="true"></span><span>Vérification</span></li>
+      </ol>
+      <p class="status" id="status">Cette page se met à jour automatiquement.</p>
     </main>
+    <script>
+      const progress = document.getElementById('progress');
+      const bar = document.getElementById('bar');
+      const percent = document.getElementById('percent');
+      const phase = document.getElementById('phase');
+      const status = document.getElementById('status');
+      const title = document.getElementById('title');
+      const description = document.getElementById('description');
+      const steps = [...document.querySelectorAll('.step')];
+      let completed = false;
+
+      async function refreshProgress() {
+        try {
+          const response = await fetch('/maintenance-status.json', { cache: 'no-store' });
+          if (!response.ok) return;
+          const data = await response.json();
+          const value = Math.max(0, Math.min(100, Number(data.percent) || 0));
+          const current = value < 18 ? 0 : value < 69 ? 1 : value < 85 ? 2 : 3;
+          progress.setAttribute('aria-valuenow', String(value));
+          bar.style.width = `${value}%`;
+          percent.textContent = `${value} %`;
+          phase.textContent = data.message || 'Mise à jour en cours';
+          steps.forEach((step, index) => {
+            step.classList.toggle('done', index < current || data.state === 'complete');
+            step.classList.toggle('active', index === current && data.state !== 'error' && data.state !== 'complete');
+            if (index === current && data.state !== 'error' && data.state !== 'complete') {
+              step.setAttribute('aria-current', 'step');
+            } else {
+              step.removeAttribute('aria-current');
+            }
+          });
+          if (data.state === 'error') {
+            title.textContent = 'Mise à jour interrompue';
+            description.textContent = 'Le site reste temporairement indisponible pendant que l’équipe vérifie le problème.';
+            status.textContent = 'La page réessaiera automatiquement.';
+            status.classList.add('error');
+            bar.classList.add('error');
+          } else if (data.state === 'complete' && !completed) {
+            completed = true;
+            title.textContent = 'Mise à jour terminée';
+            description.textContent = 'TPacket est prêt. Reconnexion au site…';
+            status.textContent = 'Rechargement automatique…';
+            setTimeout(() => location.reload(), 900);
+          }
+        } catch {
+          status.textContent = 'Connexion au serveur de mise à jour…';
+        }
+      }
+
+      refreshProgress();
+      setInterval(refreshProgress, 1200);
+    </script>
   </body>
 </html>
