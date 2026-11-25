@@ -55,3 +55,15 @@ Ces changements sont présents dans l'arbre de travail, sans numéro de version 
 - Couverture moteur mise à jour à 80 tests ; typechecks, builds, tests web et Playwright revérifiés.
 - Limites : routage calculé à l'état convergé sans paquets de contrôle/délai, options DNS DHCPv6 non
   consommées par le client, capture PCAP sans trames série HDLC.
+
+### Phase 2 — Équipements et ergonomie du simulateur
+- Ajout du téléphone IP et IoT comme hôtes, du modem et du cloud comme ponts Ethernet, du pare-feu
+  IOS avec ACL et du routeur Wi-Fi domestique avec interface radio configurable.
+- Le parseur IOS accepte désormais les interfaces `Wireless` (`Wireless0`) ; la radio du routeur
+  Wi-Fi peut transmettre et recevoir comme point d'accès intégré, avec pont vers le LAN Ethernet
+  actif quand son port n'a pas de lien physique.
+- Le terminal web prend en charge l'édition de ligne avec curseur, Home/End, Ctrl+A/E/W,
+  suppression avant/après et historique.
+- Le copier/coller inter-projets valide les fragments importés et régénère leurs IDs/MAC, tout en
+  conservant liens internes, annotations et configuration IOS.
+- Validation : 84 tests moteur, 9 tests web, 11 tests Playwright, typechecks engine/web et builds.

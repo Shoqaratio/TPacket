@@ -22,8 +22,11 @@
 | Catalyst 3560-24PS (L3) | Testée (TPacket) | SVI + `ip routing`, `no switchport` |
 | Hub | Implémentée | Répète sur tous les ports |
 | PC, portable, serveur, imprimante | Testée (TPacket) pour PC | Serveur : DHCP, DNS, TFTP, HTTP(S) ; fonctions limitées, voir couches 4–7 |
-| Point d'accès, smartphone, tablette | Partielle | Association SSID/WPA2 et portée simulées ; pas de routeur Wi-Fi domestique |
-| Téléphone IP, modem, cloud, pare-feu, IoT | Non implémentée | Absents de la bibliothèque |
+| Point d'accès, smartphone, tablette, portable Wi-Fi | Partielle (testée TPacket) | Association SSID/WPA2 et portée simulées ; pas de radio/interférences ni d'authentification réelle |
+| Routeur Wi-Fi domestique | Partielle (testée TPacket) | Radio intégrée et `Wireless0` configurable ; le LAN Wi-Fi est ponté vers l'interface Ethernet active sans lien physique. Pas de configuration de bridge/VLAN granulaire ni d'assistant grand public |
+| Téléphone IP, IoT | Partielle (testée TPacket) | Hôtes Ethernet configurables ; signalisation téléphonique et protocoles IoT dédiés absents |
+| Modem, cloud | Partielle (testée TPacket) | Ponts Ethernet transparents ; aucun accès WAN ou réseau externe réel |
+| Pare-feu | Partielle (testée TPacket) | Routeur IOS avec ACL standard/étendues ; pas d'OS ou de fonctions de pare-feu dédiés |
 
 ## Couche physique
 
@@ -33,7 +36,7 @@
 | Console (RS‑232 → Console) | Implémentée | Bureau du PC > Terminal ouvre la CLI de l'équipement relié |
 | Fibre | Implémentée | Ports fibre via modules NM-1FFE |
 | Série DCE/DTE, `clock rate` | Testée (TPacket) | Sans horloge côté DCE : up/down |
-| Wi-Fi | Partielle | `AccessPoint-PT`, `Wireless0`, association SSID/WPA2 et portée (400 unités) ; pas de radio/interférences ni d'authentification réelle |
+| Wi-Fi | Partielle (testée TPacket) | `AccessPoint-PT` et routeur Wi-Fi intégré, `Wireless0`, association SSID/WPA2 et portée (400 unités) ; pas de radio/interférences ni d'authentification réelle |
 | Couleurs de liens vert / orange / rouge | Testée (TPacket) | Orange pendant écoute/apprentissage STP et port bloqué |
 | `speed` / `duplex` | Partielle | Vitesses forcées incompatibles → lien down ; pas de simulation d'erreurs de duplex |
 
@@ -84,7 +87,8 @@
 | Élément | Statut | Notes |
 | --- | --- | --- |
 | Modes user / privileged / config / interface / range / subif / line / vlan | Testée (TPacket) | Retour automatique au mode parent comme IOS |
-| Abréviations, `?` contextuel, TAB, historique, `--More--`, erreurs `^` / ambigu / incomplet | Testée (TPacket) | Pas de déplacement du curseur dans la ligne (← →) |
+| Abréviations, `?` contextuel, TAB, historique, `--More--`, erreurs `^` / ambigu / incomplet | Testée (TPacket) | |
+| Édition de ligne dans le terminal web | Partielle (testée TPacket) | Curseur, Home/End, Ctrl+A/E/W, suppression avant/après et historique ; pas d'émulation exhaustive des raccourcis de terminaux IOS |
 | `enable secret` / `enable password`, `service password-encryption` (type 7) | Testée (TPacket) | Le hachage « type 5 » n'est pas un vrai MD5-crypt (non interchangeable avec IOS) |
 | `line con/vty`, `login`, `login local`, `username`, `transport input` | Partielle | Sessions VTY simulées ; pas de transport réseau ou de cryptographie réels |
 | running / startup-config, `copy`, `write`, `erase`, `reload`, alimentation | Testée (TPacket) | |
@@ -102,6 +106,12 @@
 | Inspection OSI (L1–L4) et cause de rejet | Testée (TPacket) | |
 | Export PCAP | Testée (TPacket) | PCAP 2.4, Ethernet avec tags 802.1Q, événements d'émission seulement ; trames série HDLC ignorées |
 | Commandes CLI pendant le mode Simulation | Partielle | Exécutées immédiatement (non pas à pas), événements visibles dans la liste |
+
+## Édition et presse-papiers
+
+| Élément | Statut | Notes |
+| --- | --- | --- |
+| Copier/coller une sélection entre projets | Partielle (testée TPacket) | Fragment JSON validé avant import, avec nouveaux IDs et adresses MAC ; liens internes, annotations et configuration IOS conservés. Limite de 4 Mo ; dépend des permissions de presse-papiers du navigateur |
 
 ## Correction et tutorat
 

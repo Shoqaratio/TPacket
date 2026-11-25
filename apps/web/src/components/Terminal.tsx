@@ -3,6 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { useEffect, useRef } from 'react';
 import { sim } from '../sim/client';
 import type { CliKind } from '../sim/protocol';
+import { editLine } from './lineEditor';
 
 interface Props {
   project: string;
@@ -51,6 +52,7 @@ export function Terminal({ project, device, kind, session, autoFocus }: Props) {
     if (autoFocus) term.focus();
 
     let line = '';
+    let cursor = 0;
     let prompt = '';
     let secret = false;
     const history: string[] = [];
@@ -83,18 +85,32 @@ export function Terminal({ project, device, kind, session, autoFocus }: Props) {
       }
     }
 
+    const redraw = () => {
+      write(`\r\x1b[2K${prompt}${secret ? '' : line}`);
+      if (!secret && cursor < line.length) write(`\x1b[${line.length - cursor}D`);
+    };
+
     const replaceLine = (next: string) => {
-      write('\b \b'.repeat(line.length));
       line = next;
-      write(line);
+      cursor = line.length;
+      redraw();
+    };
+
+    const applyEdit = (edit: Parameters<typeof editLine>[1]) => {
+      const next = editLine({ text: line, cursor }, edit);
+      line = next.text;
+      cursor = next.cursor;
+      if (!secret) redraw();
     };
 
     async function submit() {
       const text = line;
       line = '';
+      cursor = 0;
       hIdx = -1;
       if (text.trim() && !secret) history.unshift(text);
       if (history.length > 50) history.pop();
+      write('\r\x1b[2K');
       write('\n');
       busy = true;
       const r = await sim.cli(project, session, device, kind, 'input', text).finally(() => (busy = false));
@@ -117,10 +133,7 @@ export function Terminal({ project, device, kind, session, autoFocus }: Props) {
       const code = ch.charCodeAt(0);
       if (ch === '\r' || ch === '\n') return submit();
       if (code === 127 || code === 8) {
-        if (line.length) {
-          line = line.slice(0, -1);
-          if (!secret) write('\b \b');
-        }
+        applyEdit({ type: 'delete', direction: 'backward' });
         return;
       }
       if (ch === '\t') {
@@ -133,34 +146,59 @@ export function Terminal({ project, device, kind, session, autoFocus }: Props) {
         write('?\n');
         const h = await sim.cliHelp(project, session, device, kind, line);
         if (h) write(h + '\n');
-        write(prompt + line);
+        redraw();
         return;
       }
+      if (code === 1 && !secret) return applyEdit({ type: 'move', direction: 'start' });
+      if (code === 5 && !secret) return applyEdit({ type: 'move', direction: 'end' });
+      if (code === 23 && !secret) return applyEdit({ type: 'delete', direction: 'word' });
       if (code === 3 || code === 26) {
         // Ctrl+C / Ctrl+Z: abandon the line; in configuration modes return to privileged EXEC.
         if (kind === 'ios' && prompt.includes('(')) {
           line = 'end';
+          cursor = line.length;
           write('^Z');
           return submit();
         }
         line = '';
+        cursor = 0;
         write('^C\n' + prompt);
         return;
       }
       if (code < 32) return;
-      line += ch;
-      if (!secret) write(ch);
+      if (cursor === line.length) {
+        line += ch;
+        cursor += ch.length;
+        if (!secret) write(ch);
+      } else applyEdit({ type: 'insert', text: ch });
     }
 
     let chain = Promise.resolve();
     const onData = term.onData((data) => {
-      // Arrow keys arrive as escape sequences.
+      const moves: Record<string, 'left' | 'right' | 'start' | 'end'> = {
+        '\x1b[A': 'left',
+        '\x1b[B': 'right',
+        '\x1b[D': 'left',
+        '\x1b[C': 'right',
+        '\x1b[H': 'start',
+        '\x1b[F': 'end',
+        '\x1b[1~': 'start',
+        '\x1b[4~': 'end',
+      };
       if (data === '\x1b[A' || data === '\x1b[B') {
         chain = chain.then(() => {
           if (secret || keyWaiter) return;
           if (data === '\x1b[A' && hIdx + 1 < history.length) hIdx++;
           else if (data === '\x1b[B' && hIdx >= 0) hIdx--;
           replaceLine(hIdx >= 0 ? history[hIdx]! : '');
+        });
+        return;
+      }
+      if (data in moves || data === '\x1b[3~') {
+        chain = chain.then(() => {
+          if (secret || keyWaiter) return;
+          if (data === '\x1b[3~') applyEdit({ type: 'delete', direction: 'forward' });
+          else applyEdit({ type: 'move', direction: moves[data]! });
         });
         return;
       }
@@ -171,7 +209,10 @@ export function Terminal({ project, device, kind, session, autoFocus }: Props) {
     const unsub = sim.onConsole(project, device, (text) => {
       if (kind !== 'ios') return;
       if (busy) queued.push(text);
-      else write(`\n${text}\n${prompt}${secret ? '' : line}`);
+      else {
+        write(`\r\x1b[2K\n${text}\n`);
+        redraw();
+      }
     });
 
     sim

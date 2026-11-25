@@ -3,7 +3,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useT } from '../i18n';
-import { closeProject, exportNetlab, openProject, saveAsCloudCopy, useSave } from '../projects';
+import { closeProject, copySelectionToClipboard, exportNetlab, openProject, pasteSelectionFromClipboard, saveAsCloudCopy, useSave } from '../projects';
 import { sim, useSim } from '../sim/client';
 import { useUi } from '../store';
 import { BottomPanel } from './BottomPanel';
@@ -20,7 +20,8 @@ function isTyping(e: KeyboardEvent): boolean {
 }
 
 function useShortcuts(project: string) {
-  const clip = useRef<string[]>([]);
+  const t = useT();
+  const clip = useRef<{ project: string; devices: string[] } | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e) || document.querySelector('[role="dialog"]')) return;
@@ -30,8 +31,22 @@ function useShortcuts(project: string) {
       const devSel = ui.selection.filter((id) => view?.devices.some((d) => d.id === id));
       if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) void sim.undo(project);
       else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) void sim.redo(project);
-      else if (mod && e.key.toLowerCase() === 'c') clip.current = devSel;
-      else if (mod && e.key.toLowerCase() === 'v' && clip.current.length) void sim.op<string[]>(project, 'duplicate', clip.current.filter((id) => view?.devices.some((d) => d.id === id)), 60, 60).then((ids) => ui.set({ selection: ids }));
+      else if (mod && e.key.toLowerCase() === 'c' && ui.selection.length) {
+        clip.current = devSel.length === ui.selection.length ? { project, devices: devSel } : null;
+        void copySelectionToClipboard(project, ui.selection)
+          .then(() => ui.toast(t('edit.copyDone')))
+          .catch((err: unknown) => ui.toast(err instanceof Error ? err.message : String(err), 'error'));
+      } else if (mod && e.key.toLowerCase() === 'v') {
+        const local = clip.current;
+        if (local?.project === project && local.devices.length) {
+          void sim.op<string[]>(project, 'duplicate', local.devices.filter((id) => view?.devices.some((d) => d.id === id)), 60, 60)
+            .then((ids) => ui.set({ selection: ids }));
+        } else {
+          void pasteSelectionFromClipboard(project)
+            .then((ids) => { ui.set({ selection: ids }); ui.toast(t('edit.pasteDone')); })
+            .catch((err: unknown) => ui.toast(err instanceof Error ? err.message : String(err), 'error'));
+        }
+      }
       else if (mod && e.key.toLowerCase() === 'd' && devSel.length) void sim.op<string[]>(project, 'duplicate', devSel, 40, 40).then((ids) => ui.set({ selection: ids }));
       else if (mod && e.key.toLowerCase() === 'a') ui.set({ selection: [...(view?.devices.map((d) => d.id) ?? []), ...(view?.notes.map((n) => n.id) ?? [])] });
       else if (mod && e.key.toLowerCase() === 's') void exportNetlab(project);
@@ -42,7 +57,7 @@ function useShortcuts(project: string) {
     };
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
-  }, [project]);
+  }, [project, t]);
 }
 
 function StatusBar({ project }: { project: string }) {

@@ -1,4 +1,4 @@
-import type { DeviceKind, HostRole, PortSpec } from './types';
+import type { DeviceKind, DeviceRole, PortSpec, WirelessDoc } from './types';
 
 export interface ModuleSpec {
   id: string;
@@ -19,12 +19,14 @@ export interface ModelSpec {
   id: string;
   label: string;
   kind: DeviceKind;
-  role?: HostRole;
+  role?: DeviceRole;
   /** Name prefix for new devices ("Router" -> Router0, Router1, ...). */
   namePrefix: string;
   ports: PortSpec[];
   bays: BaySpec[];
   defaultModules?: Record<string, string>;
+  defaultWireless?: WirelessDoc;
+  defaultConfig?: string;
   /** IOS image string shown by `show version`. */
   ios?: { version: string; image: string; platform: string; memory: string; flash: string };
   /** IOS 15 shows local (/32 "L") routes in the routing table. */
@@ -116,6 +118,20 @@ export const MODELS: Record<string, ModelSpec> = {
     defaultModules: { NM2: 'NM-1S', NM3: 'NM-1S' },
     ios: { version: '12.2(28)', image: 'PT1000-I-M', platform: 'PT 1001 (PTSC2005)', memory: '60416K/5120K', flash: '63488K' },
   },
+  'WirelessRouter-PT': {
+    id: 'WirelessRouter-PT', label: 'Wireless Router-PT', kind: 'router', role: 'wireless-router', namePrefix: 'Wireless Router',
+    ports: [ge('GigabitEthernet0/0'), ge('GigabitEthernet0/1'), wl('Wireless0'), con],
+    bays: [],
+    defaultWireless: { ssid: 'Home', security: 'wpa2', key: 'netlabwifi' },
+    defaultConfig: 'interface Wireless0\n no shutdown',
+    ios: { version: '15.1(4)M4', image: 'TPACKET-HOME-ROUTER', platform: 'TPacket Wireless Router', memory: '131072K/16384K', flash: '65536K' },
+  },
+  'Firewall-PT': {
+    id: 'Firewall-PT', label: 'Firewall-PT (IOS ACL)', kind: 'router', role: 'firewall', namePrefix: 'Firewall',
+    ports: [ge('GigabitEthernet0/0'), ge('GigabitEthernet0/1'), con],
+    bays: [],
+    ios: { version: '1.0', image: 'TPACKET-FIREWALL', platform: 'TPacket Firewall Router', memory: '131072K/16384K', flash: '65536K' },
+  },
   '2960-24TT': {
     id: '2960-24TT', label: 'Catalyst 2960-24TT', kind: 'switch', namePrefix: 'Switch',
     ports: [...range(24, (i) => fe(`FastEthernet0/${i + 1}`)), ge('GigabitEthernet0/1'), ge('GigabitEthernet0/2'), con],
@@ -138,6 +154,14 @@ export const MODELS: Record<string, ModelSpec> = {
     id: 'Hub-PT', label: 'Hub', kind: 'hub', namePrefix: 'Hub',
     ports: range(6, (i) => fe(`Port ${i}`)), bays: [],
   },
+  'Modem-PT': {
+    id: 'Modem-PT', label: 'Modem-PT (Ethernet bridge)', kind: 'hub', role: 'modem', namePrefix: 'Modem',
+    ports: [fe('Ethernet0'), fe('Ethernet1')], bays: [],
+  },
+  'Cloud-PT': {
+    id: 'Cloud-PT', label: 'Cloud-PT (WAN bridge)', kind: 'hub', role: 'cloud', namePrefix: 'Cloud',
+    ports: range(6, (i) => fe(`Port ${i}`)), bays: [],
+  },
   PC: {
     id: 'PC', label: 'PC', kind: 'host', role: 'pc', namePrefix: 'PC',
     ports: [fe('FastEthernet0'), { name: 'RS 232', media: 'rs232', speed: 0 }], bays: [],
@@ -153,6 +177,14 @@ export const MODELS: Record<string, ModelSpec> = {
   Tablet: {
     id: 'Tablet', label: 'Tablet', kind: 'host', role: 'tablet', namePrefix: 'Tablet',
     ports: [wl('Wireless0')], bays: [],
+  },
+  'IP-Phone-PT': {
+    id: 'IP-Phone-PT', label: 'IP Phone-PT', kind: 'host', role: 'ipphone', namePrefix: 'IP Phone',
+    ports: [fe('FastEthernet0')], bays: [],
+  },
+  'IoT-PT': {
+    id: 'IoT-PT', label: 'IoT Device-PT', kind: 'host', role: 'iot', namePrefix: 'IoT',
+    ports: [fe('FastEthernet0'), wl('Wireless0')], bays: [],
   },
   'AccessPoint-PT': {
     id: 'AccessPoint-PT', label: 'Access point', kind: 'ap', namePrefix: 'Access Point',

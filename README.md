@@ -8,7 +8,8 @@ BTS SIO. Aucun logiciel Cisco n'est inclus : l'émulation IOS est un interpréte
 > services applicatifs, IPv6 statique/SLAAC et Wi-Fi. Le mode Simulation comprend les PDU complexes
 > ICMP/TCP/UDP et l'export PCAP Ethernet. Les espaces élève/professeur, devoirs/examens, éditeur de critères,
 > collaboration et tutorat sont également présents. Le contenu de cours, d'exercices et de quiz
-> n'est pas encore livré. Les capacités et limites précises sont détaillées dans
+> n'est pas encore livré. La phase 2 ajoute des modèles d'équipement, l'édition de ligne CLI et le
+> copier/coller inter-projets. Les capacités et limites précises sont détaillées dans
 > [PROGRESS.md](PROGRESS.md) et [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Démarrage rapide (développement)
@@ -57,8 +58,8 @@ cd apps/web && npx tsc --noEmit -p .                     # types web
 cd apps/web && npx playwright test                       # API temporaire + Vite + Chromium
 ```
 
-Dernière vérification consignée : 80 tests moteur, 18 tests API, typechecks/builds réussis et 8/8 tests
-Playwright réussis dans la suite complète. Consulter [PROGRESS.md](PROGRESS.md) pour les limites de
+Dernière vérification consignée : 84 tests moteur, 9 tests web, 18 tests API, typechecks/builds
+réussis et 11/11 tests Playwright réussis dans la suite complète. Consulter [PROGRESS.md](PROGRESS.md) pour les limites de
 validation et de déploiement.
 
 ## Structure

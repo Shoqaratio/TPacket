@@ -371,7 +371,7 @@ export function DeviceWindow({ project }: { project: string }) {
             </Tabs.List>
             <div className="nl-scroll min-h-0 flex-1 overflow-auto p-4">
               <Tabs.Content value="physical"><Physical project={project} dev={dev} /></Tabs.Content>
-              <Tabs.Content value="config">{dev.kind === 'host' ? <HostIpForm project={project} dev={dev} /> : dev.kind === 'ap' ? <ApConfig project={project} dev={dev} /> : <IosConfigTab project={project} dev={dev} />}</Tabs.Content>
+              <Tabs.Content value="config">{dev.kind === 'host' ? <HostIpForm project={project} dev={dev} /> : dev.kind === 'ap' || dev.role === 'wireless-router' ? <ApConfig project={project} dev={dev} /> : <IosConfigTab project={project} dev={dev} />}</Tabs.Content>
               {dev.services && <Tabs.Content value="services"><Services project={project} dev={dev} /></Tabs.Content>}
               {ios && <Tabs.Content value="cli" className="h-full"><div className="h-[420px]"><Terminal project={project} device={dev.id} kind="ios" session={`console:${dev.id}`} autoFocus /></div></Tabs.Content>}
               {dev.kind === 'host' && <Tabs.Content value="desktop" className="h-full"><Desktop project={project} dev={dev} /></Tabs.Content>}

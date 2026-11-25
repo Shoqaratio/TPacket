@@ -4,7 +4,7 @@ import { toPng, toSvg } from 'html-to-image';
 import { FastForward, Footprints, Hand, MousePointer2, Pause, Play, RotateCcw, Square, StickyNote, Trash2, Undo2, Redo2, Mail } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useT } from '../i18n';
-import { createLocalProject, downloadFile, exportNetlab, importNetlabFile } from '../projects';
+import { copySelectionToClipboard, createLocalProject, downloadFile, exportNetlab, importNetlabFile, pasteSelectionFromClipboard } from '../projects';
 import { sim, useSim } from '../sim/client';
 import { useUi } from '../store';
 import { ENGINE_VERSION } from '@netlab/engine';
@@ -81,6 +81,9 @@ export function MenuBar({ project }: { project: string }) {
       <Menu label={t('menu.edit')}>
         <MI disabled={!view?.canUndo} onSelect={() => void sim.undo(project)} kbd="Ctrl+Z">{t('edit.undo')}</MI>
         <MI disabled={!view?.canRedo} onSelect={() => void sim.redo(project)} kbd="Ctrl+Y">{t('edit.redo')}</MI>
+        <Sep />
+        <MI disabled={!ui.selection.length} onSelect={() => void copySelectionToClipboard(project, ui.selection).then(() => ui.toast(t('edit.copyDone'))).catch((e: unknown) => ui.toast(e instanceof Error ? e.message : String(e), 'error'))} kbd="Ctrl+C">{t('edit.copy')}</MI>
+        <MI onSelect={() => void pasteSelectionFromClipboard(project).then((ids) => { ui.set({ selection: ids }); ui.toast(t('edit.pasteDone')); }).catch((e: unknown) => ui.toast(e instanceof Error ? e.message : String(e), 'error'))} kbd="Ctrl+V">{t('edit.paste')}</MI>
         <Sep />
         <MI disabled={!devSel.length} onSelect={() => void sim.op<string[]>(project, 'duplicate', devSel, 40, 40).then((ids) => ui.set({ selection: ids }))} kbd="Ctrl+D">{t('edit.duplicate')}</MI>
         <MI disabled={!ui.selection.length} onSelect={() => void sim.op(project, 'removeItems', ui.selection).then(() => ui.set({ selection: [] }))} kbd="Suppr">{t('edit.delete')}</MI>

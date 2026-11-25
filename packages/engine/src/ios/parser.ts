@@ -282,6 +282,7 @@ export const IF_HELP: Record<string, string> = {
   Serial: 'Serial',
   Vlan: 'Catalyst Vlans',
   Loopback: 'Loopback interface',
+  Wireless: 'Wireless LAN interface',
 };
 
 /** Default help strings, close to IOS wording. */

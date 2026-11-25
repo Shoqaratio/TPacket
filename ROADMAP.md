@@ -15,13 +15,15 @@ Légende : ✅ fait et testé · 🟡 partiel · ⬜ à faire. Chaque phase doit
 - ⬜ Interfaces d'administration d'établissement et super-admin (utilisateurs, années, quotas, journaux).
 - ⬜ Limitation de débit et sessions partagées via Redis (plusieurs instances d'API).
 
-## Phase 2 — Simulateur fondamental ✅
+## Phase 2 — Équipements et ergonomie du simulateur ✅
 Éditeur, équipements, câblage, Ethernet, ARP, IPv4, ICMP, routage statique, CLI IOS.
 - ✅ Point d'accès, smartphone, tablette et interface Wi-Fi sur portable ; association SSID/WPA2.
-- ⬜ Téléphone IP, routeur Wi‑Fi domestique, modem, cloud, pare-feu et IoT (chaque modèle n'apparaîtra
-  qu'une fois son comportement implémenté).
-- ⬜ Édition de ligne CLI complète (curseur, Ctrl+A/E/W).
-- ⬜ Copier/coller inter-projets (sérialiser la sélection dans le presse-papiers).
+- ✅ Téléphone IP et IoT (hôtes), modem et cloud (ponts Ethernet), pare-feu (routage IOS avec ACL)
+  et routeur Wi‑Fi (interface radio IOS configurable, pontée vers le LAN Ethernet actif).
+- ✅ Édition de ligne CLI : déplacement du curseur, Home/End, Ctrl+A/E/W, suppression avant/après
+  le curseur et navigation dans l'historique.
+- ✅ Copier/coller inter-projets : fragment validé, nouveaux identifiants/MAC, liens internes,
+  annotations et configuration IOS préservés.
 
 ## Phase 3 — Simulateur avancé ✅
 Le périmètre livré est couvert par des tests de comportement ; « terminé » signifie que le sous-ensemble
@@ -41,8 +43,8 @@ restants sont explicités dans `COMPATIBILITY.md`.
 
 Les protocoles de routage affichent l'état convergé calculé : les paquets de contrôle et les
 temporisations de convergence ne sont pas simulés. Les sous-ensembles et écarts sont détaillés dans
-`COMPATIBILITY.md`. Validation locale de clôture : `npm test` (80 tests moteur, 5 tests web),
-`npm run build`, ainsi que les typechecks engine et web.
+`COMPATIBILITY.md`. Validation locale après la phase 2 : `npm test` (84 tests moteur, 9 tests web),
+`npx playwright test` (11 tests), `npm run typecheck` et `npm run build`.
 
 ## Phase 4 — Plateforme pédagogique 🟡
 - ✅ Classes, adhésions, codes d'inscription, annonces, devoirs/examens, dates d'ouverture/échéance,

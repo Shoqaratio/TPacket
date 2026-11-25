@@ -4,6 +4,7 @@ import { api, ApiError, type CloudProject } from './api';
 import { sim, useSim } from './sim/client';
 import { newLocalId, storage, type StoredProject } from './storage';
 import { useUi } from './store';
+import { decodeSelection, encodeSelection } from './selectionClipboard';
 
 export type SaveState = 'saved' | 'saving' | 'cloud' | 'conflict' | 'offline';
 
@@ -138,4 +139,16 @@ export async function importNetlabFile(file: File): Promise<string> {
   if (file.size > 4 * 1024 * 1024) throw new Error('too large');
   const doc = validateProject(JSON.parse(await file.text()));
   return createLocalProject(doc.name || file.name.replace(/\.netlab$/, ''), doc);
+}
+
+export async function copySelectionToClipboard(project: string, selected: string[]): Promise<void> {
+  if (!navigator.clipboard?.writeText) throw new Error('Clipboard access requires a secure browser context');
+  const doc = validateProject(await sim.serialize(project));
+  await navigator.clipboard.writeText(encodeSelection(doc, selected));
+}
+
+export async function pasteSelectionFromClipboard(project: string): Promise<string[]> {
+  if (!navigator.clipboard?.readText) throw new Error('Clipboard access requires a secure browser context');
+  const doc = decodeSelection(await navigator.clipboard.readText());
+  return sim.op<string[]>(project, 'pasteSelection', doc, 40, 40);
 }

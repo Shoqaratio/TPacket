@@ -12,6 +12,52 @@ export function DeviceIcon({ kind, role, size = 48, off }: P) {
   const stroke = off ? '#64748b' : '#e2e8f5';
   const fill = off ? '#334155' : kind === 'router' ? '#2563eb' : kind === 'switch' ? '#0891b2' : kind === 'l3switch' ? '#7c3aed' : kind === 'hub' ? '#0d9488' : '#475569';
   const common = { width: size, height: size, viewBox: '0 0 48 48', 'aria-hidden': true } as const;
+  if (role === 'firewall')
+    return (
+      <svg {...common}>
+        <path d="M24 4 41 10v12c0 11-7 18-17 22C14 40 7 33 7 22V10z" fill={fill} stroke={stroke} strokeWidth="1.5" />
+        <path d="M15 17h18M15 23h18M15 29h18" stroke={stroke} strokeWidth="2" strokeDasharray="4 2" />
+      </svg>
+    );
+  if (role === 'wireless-router')
+    return (
+      <svg {...common}>
+        <rect x="5" y="24" width="38" height="15" rx="3" fill={fill} stroke={stroke} strokeWidth="1.3" />
+        <path d="M13 18a16 16 0 0 1 22 0M18 22a9 9 0 0 1 12 0" fill="none" stroke={off ? stroke : '#38bdf8'} strokeWidth="2" strokeLinecap="round" />
+        <circle cx="24" cy="21" r="1.5" fill={stroke} />
+        <circle cx="13" cy="32" r="1.4" fill="#22c55e" /><circle cx="19" cy="32" r="1.4" fill="#22c55e" />
+      </svg>
+    );
+  if (role === 'modem')
+    return (
+      <svg {...common}>
+        <rect x="8" y="10" width="32" height="29" rx="3" fill={fill} stroke={stroke} strokeWidth="1.3" />
+        <path d="M14 16h20M14 22h20" stroke={stroke} strokeWidth="1.5" />
+        {[15, 24, 33].map((x) => <circle key={x} cx={x} cy="32" r="2" fill="#22c55e" />)}
+      </svg>
+    );
+  if (role === 'cloud')
+    return (
+      <svg {...common}>
+        <path d="M12 35h24a8 8 0 0 0 1-16 13 13 0 0 0-25-2 9 9 0 0 0 0 18z" fill={fill} stroke={stroke} strokeWidth="1.5" />
+        <path d="M15 27h18M19 23l-4 4 4 4M29 23l4 4-4 4" fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  if (role === 'ipphone')
+    return (
+      <svg {...common}>
+        <path d="M13 8c-3 1-5 4-4 8 3 11 12 20 23 23 4 1 7-1 8-4l-7-7-6 4c-4-2-7-5-9-9l4-6z" fill={fill} stroke={stroke} strokeWidth="1.5" strokeLinejoin="round" />
+        <path d="M28 10h12v10H28zM30 13h8M30 16h6" fill="none" stroke={stroke} strokeWidth="1.3" />
+      </svg>
+    );
+  if (role === 'iot')
+    return (
+      <svg {...common}>
+        <rect x="12" y="12" width="24" height="24" rx="5" fill={fill} stroke={stroke} strokeWidth="1.4" />
+        <circle cx="24" cy="24" r="4" fill="none" stroke={stroke} strokeWidth="2" />
+        <path d="M24 5v7M24 36v7M5 24h7M36 24h7M10 10l5 5M33 33l5 5M38 10l-5 5M15 33l-5 5" stroke={off ? stroke : '#38bdf8'} strokeWidth="1.7" strokeLinecap="round" />
+      </svg>
+    );
   if (kind === 'router')
     return (
       <svg {...common}>

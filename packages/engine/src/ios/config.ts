@@ -204,7 +204,7 @@ export function defaultIosConfig(spec: ModelSpec, physical: string[]): IosConfig
 // Interface naming
 // ------------------------------------------------------------------------------------------
 
-export const IF_TYPES = ['Ethernet', 'FastEthernet', 'GigabitEthernet', 'Serial', 'Vlan', 'Loopback'] as const;
+export const IF_TYPES = ['Ethernet', 'FastEthernet', 'GigabitEthernet', 'Serial', 'Vlan', 'Loopback', 'Wireless'] as const;
 
 export function ifShort(name: string): string {
   return name

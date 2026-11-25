@@ -6,17 +6,17 @@ sont livrés. Les phases 4 à 6 sont **partiellement livrées** : classes et dev
 éditeur d'exercices, collaboration, examens et tutorat sont présents. Le contenu pédagogique livré
 reste à créer.
 
-Les résultats ci-dessous comprennent la suite Playwright complète exécutée le 25 novembre 2026 après
-correction du conflit d'inscription du compte administrateur partagé.
+Les résultats ci-dessous comprennent la suite Playwright complète exécutée après l'implémentation de
+la phase 2 et la correction du conflit d'inscription du compte administrateur partagé.
 
 ## Ce qui fonctionne (vérifié)
 
 | Suite | Résultat | Commande |
 | --- | --- | --- |
-| Moteur (Vitest) | 80 tests réussis | `npm test -w @netlab/engine` |
-| Web (Vitest) | 3 tests réussis | `npm test -w @netlab/web` |
+| Moteur (Vitest) | 84 tests réussis | `npm test -w @netlab/engine` |
+| Web (Vitest) | 9 tests réussis | `npm test -w @netlab/web` |
 | API (Pytest) | 18 tests réussis | `cd apps/api && .venv/bin/python -m pytest -q --timeout 60` |
-| Bout en bout (Playwright, Chromium, 1366×768, fr-FR) | 8/8 tests réussis dans la suite complète | `cd apps/web && npx playwright test` |
+| Bout en bout (Playwright, Chromium, 1366×768, fr-FR) | 11/11 tests réussis dans la suite complète | `cd apps/web && npx playwright test` |
 | Typechecks engine + web | OK | `npm run typecheck` |
 | Builds grader + web | OK | `npm run build` |
 | Migration Alembic montée/descendue/remontée (SQLite) | OK | vérification consignée dans le handoff |
@@ -30,7 +30,7 @@ serveur sont donc ceux de l'environnement de test, pas une instance de productio
   (zoom, déplacement, minimap, grille magnétique, sélection multiple, menu contextuel), panneau de
   propriétés, terminal, liste d'événements, barre d'état, thème clair/sombre, FR/EN.
 - Glisser-déposer des équipements, câblage manuel (choix du port) ou automatique, notes, zones
-  colorées redimensionnables, dupliquer, copier/coller (dans un même projet), alignement, annuler /
+  colorées redimensionnables, dupliquer, copier/coller (y compris entre projets), alignement, annuler /
   rétablir (50 niveaux), raccourcis clavier, export PNG / SVG / PDF, plein écran.
 - Fenêtre d'équipement : Physique (alimentation, modules), Config (PC : IP ; IOS : import/export de
   configuration texte), CLI, Bureau (Configuration IP, Invite de commandes, Terminal console).
@@ -40,6 +40,9 @@ serveur sont donc ceux de l'environnement de test, pas une instance de productio
   détection de conflit ; import/export `.netlab`.
 - Modes Temps réel (avance rapide +30 s) et Simulation (PDU complexes ICMP/TCP/UDP, pas à pas,
   lecture, vitesse, animation, filtres, inspection OSI, cause de rejet et export PCAP Ethernet).
+- Équipements phase 2 : téléphone IP et IoT configurables comme hôtes, modem et cloud comme ponts,
+  pare-feu IOS avec ACL, routeur Wi-Fi domestique avec interface radio configurable.
+- Terminal : édition de ligne avec curseur, Home/End, Ctrl+A/E/W, suppression avant/après et historique.
 - ACL nommées, RIP v1/v2, OSPFv2/v3, NAT/PAT, DHCP/DHCPv6, DNS, TCP minimal, services applicatifs,
   IPv6 statique/autoconfigurée et connectivité sans fil ; voir les limites précises dans
   `COMPATIBILITY.md`.
@@ -72,9 +75,9 @@ Voir `ROADMAP.md` pour le plan détaillé. Principaux manques :
 - Activity Wizard, variantes d'exercices à graine et Network Incident.
 - Fonctions d'identité avancées : vérification/réinitialisation par e-mail, 2FA, OIDC et LTI ;
   interfaces d'administration détaillées.
-- Équipements et protocoles manquants : routeur Wi-Fi domestique, téléphone IP, cloud, modem,
-  pare-feu, IoT, FTP/SMTP/POP3/NTP ; les fonctions livrées en phase 3 restent des sous-ensembles,
-  voir `COMPATIBILITY.md`.
+- Protocoles/services manquants : FTP/SMTP/POP3/NTP. Les modèles phase 2 et les fonctions livrées
+  en phase 3 restent des sous-ensembles ; le routeur Wi-Fi ne propose pas de configuration de
+  bridge/VLAN granulaire. Voir `COMPATIBILITY.md`.
 
 ## Limitations connues
 - Docker n'est pas installé sur la machine de développement. Les images ont été construites et la
@@ -96,8 +99,8 @@ Voir `ROADMAP.md` pour le plan détaillé. Principaux manques :
 - La suite Playwright complète passe avec le compte administrateur partagé : inscription lors de la
   première spec, connexion si le compte existe déjà. Les tests de la suite peuvent partager la base
   temporaire de l'exécution.
-- Copier/coller entre projets non pris en charge ; pas de groupes d'équipements (zones uniquement).
-- La CLI ne gère pas le déplacement du curseur dans la ligne ni `Ctrl+A/E`.
+- Le copier/coller inter-projets dépend des permissions presse-papiers du navigateur ; limite de 4 Mo.
+- Pas de groupes d'équipements (zones uniquement).
 - STP et CDP sont calculés (pas de BPDU/annonces simulés) ; le compteur « type 5 » n'est pas MD5-crypt.
 - Pas de benchmark de performance publié (objectifs 100 / 500 équipements non mesurés).
 - L'accessibilité WCAG 2.2 AA est un objectif : rôles ARIA et focus visibles en place, aucun audit réalisé.

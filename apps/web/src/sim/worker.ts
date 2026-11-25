@@ -175,6 +175,8 @@ function runOp(o: Open, op: OpName, args: unknown[]): unknown {
       return net.setHostConfig(a[0], a[1]);
     case 'duplicate':
       return net.duplicate(a[0], a[1], a[2]);
+    case 'pasteSelection':
+      return net.pasteSelection(a[0], a[1], a[2]);
     case 'addNote':
       return net.addNote(a[0], a[1], a[2]);
     case 'addZone':

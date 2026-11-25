@@ -79,6 +79,7 @@ export type OpName =
   | 'setModule'
   | 'setHostConfig'
   | 'duplicate'
+  | 'pasteSelection'
   | 'addNote'
   | 'addZone'
   | 'updateAnnotation'

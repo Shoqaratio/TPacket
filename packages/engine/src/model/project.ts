@@ -78,6 +78,15 @@ export function validateServices(v: Json): ServicesDoc {
   return out;
 }
 
+function validateWireless(v: Json, fallback: { ssid: string; security: 'open' | 'wpa2'; key: string }): { ssid: string; security: 'open' | 'wpa2'; key: string } {
+  const w = isObj(v) ? v : {};
+  return {
+    ssid: str(w.ssid ?? fallback.ssid, 32, 'ssid'),
+    security: w.security === 'wpa2' ? 'wpa2' : w.security === 'open' ? 'open' : fallback.security,
+    key: str(w.key ?? fallback.key, 63, 'wifi key'),
+  };
+}
+
 export function defaultHostConfig(): HostConfig {
   return { ipMode: 'static', ip: '', mask: '', gateway: '', dns: '', portUp: true, ipv6Mode: 'static' };
 }
@@ -103,7 +112,7 @@ export function addDevice(p: ProjectDoc, model: string, x: number, y: number): D
   };
   p.counters.mac += portCount;
   if (isIosKind(spec.kind)) {
-    dev.running = '';
+    dev.running = spec.defaultConfig ?? '';
     dev.startup = null;
     if (spec.kind !== 'router') dev.vlanDb = [];
   } else if (spec.kind === 'host') {
@@ -113,6 +122,7 @@ export function addDevice(p: ProjectDoc, model: string, x: number, y: number): D
   } else if (spec.kind === 'ap') {
     dev.wireless = { ssid: 'Default', security: 'open', key: '' };
   }
+  if (spec.defaultWireless) dev.wireless = structuredClone(spec.defaultWireless);
   p.devices.push(dev);
   return dev;
 }
@@ -229,7 +239,7 @@ export function validateProject(input: Json): ProjectDoc {
       }
     }
     if (isIosKind(spec.kind)) {
-      d.running = str(raw.running ?? '', LIMITS.configBytes, 'running-config');
+      d.running = str(raw.running ?? spec.defaultConfig ?? '', LIMITS.configBytes, 'running-config');
       d.startup = raw.startup === null || raw.startup === undefined ? null : str(raw.startup, LIMITS.configBytes, 'startup-config');
       if (raw.rsaModulus !== undefined) d.rsaModulus = num(raw.rsaModulus, 'rsaModulus');
       if (spec.kind !== 'router') {
@@ -244,6 +254,7 @@ export function validateProject(input: Json): ProjectDoc {
           }
         }
       }
+      if (spec.defaultWireless) d.wireless = validateWireless(raw.wireless, spec.defaultWireless);
     } else if (spec.kind === 'host') {
       const h = isObj(raw.host) ? raw.host : {};
       if (h.ipv6Mode !== undefined && !['static', 'slaac', 'dhcpv6'].includes(String(h.ipv6Mode))) {
@@ -263,8 +274,7 @@ export function validateProject(input: Json): ProjectDoc {
       };
       if (spec.role === 'server') d.services = validateServices(raw.services);
     } else if (spec.kind === 'ap') {
-      const w = isObj(raw.wireless) ? raw.wireless : {};
-      d.wireless = { ssid: str(w.ssid ?? 'Default', 32, 'ssid'), security: w.security === 'wpa2' ? 'wpa2' : 'open', key: str(w.key ?? '', 63, 'wifi key') };
+      d.wireless = validateWireless(raw.wireless, { ssid: 'Default', security: 'open', key: '' });
     }
     p.devices.push(d);
   }

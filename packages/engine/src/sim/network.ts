@@ -376,6 +376,48 @@ export class Network {
     return [...map.values()];
   }
 
+  /** Imports a validated selection with fresh ids/MACs while preserving its internal links and configuration. */
+  pasteSelection(selection: unknown, dx: number, dy: number): string[] {
+    const source = P.validateProject(selection);
+    if (this.doc.devices.length + source.devices.length > P.LIMITS.devices) throw new P.ModelError('limit', `A project is limited to ${P.LIMITS.devices} devices`);
+    if (this.doc.links.length + source.links.length > P.LIMITS.links) throw new P.ModelError('limit', `A project is limited to ${P.LIMITS.links} links`);
+    if (this.doc.notes.length + source.notes.length > P.LIMITS.notes || this.doc.zones.length + source.zones.length > P.LIMITS.notes) {
+      throw new P.ModelError('limit', `A project is limited to ${P.LIMITS.notes} annotations of each type`);
+    }
+
+    const map = new Map<string, string>();
+    for (const original of source.devices) {
+      const copy = P.addDevice(this.doc, original.model, original.x + dx, original.y + dy);
+      copy.modules = { ...original.modules };
+      copy.running = original.running ?? '';
+      copy.startup = original.startup ?? null;
+      if (original.vlanDb) copy.vlanDb = structuredClone(original.vlanDb);
+      if (original.rsaModulus !== undefined) copy.rsaModulus = original.rsaModulus;
+      if (original.host) copy.host = structuredClone(original.host);
+      if (original.services) copy.services = structuredClone(original.services);
+      if (original.wireless) copy.wireless = structuredClone(original.wireless);
+      copy.powered = original.powered;
+      this.devices.set(copy.id, this.bootDevice(copy));
+      map.set(original.id, copy.id);
+    }
+    for (const link of source.links) {
+      P.addLink(this.doc, link.cable, { device: map.get(link.a.device)!, port: link.a.port }, { device: map.get(link.b.device)!, port: link.b.port });
+    }
+    const pasted: string[] = [...map.values()];
+    for (const note of source.notes) {
+      const id = this.addNote(note.x + dx, note.y + dy, note.text);
+      this.updateAnnotation(id, { color: note.color });
+      pasted.push(id);
+    }
+    for (const zone of source.zones) {
+      const id = this.addZone(zone.x + dx, zone.y + dy, zone.w, zone.h, zone.label);
+      this.updateAnnotation(id, { color: zone.color });
+      pasted.push(id);
+    }
+    this.refresh();
+    return pasted;
+  }
+
   addNote(x: number, y: number, text: string): string {
     const id = `n${++this.doc.counters.note}`;
     this.doc.notes.push({ id, x: Math.round(x), y: Math.round(y), text: text.slice(0, P.LIMITS.noteLength), color: '#facc15' });
@@ -415,7 +457,7 @@ export class Network {
 
   setWireless(id: string, cfg: { ssid: string; security: 'open' | 'wpa2'; key: string }): void {
     const d = this.dev(id);
-    if (d.kind !== 'ap') throw new P.ModelError('not_ap', 'Not an access point');
+    if (!this.isWirelessAccessPoint(d)) throw new P.ModelError('not_ap', 'Device has no configurable wireless access point');
     const ssid = String(cfg.ssid ?? '').slice(0, 32);
     const key = String(cfg.key ?? '').slice(0, 63);
     if (!ssid) throw new P.ModelError('invalid_ssid', 'SSID cannot be empty');
@@ -479,10 +521,14 @@ export class Network {
     const adminDown = this.portAdminDown(d, port);
     if (d.ports.get(port)?.spec.media === 'wireless') {
       if (!d.doc.powered || adminDown) return { adminDown, l1: false, proto: false };
-      const up = d.kind === 'ap' ? true : !!this.association(d);
+      const up = this.isWirelessAccessPoint(d) ? true : !!this.association(d);
       return { adminDown, l1: up, proto: up };
     }
     const pr = this.peer(d.doc.id, port);
+    if (!pr && d.doc.model === 'WirelessRouter-PT' && port.startsWith('GigabitEthernet') && !adminDown && d.doc.powered) {
+      const radioUp = !this.portAdminDown(d, 'Wireless0') && this.isWirelessAccessPoint(d);
+      return { adminDown, l1: radioUp, proto: radioUp };
+    }
     if (!pr || !d.doc.powered) return { adminDown, l1: false, proto: false };
     const o = this.devices.get(pr.device)!;
     const mySpec = d.ports.get(port)!.spec;
@@ -549,6 +595,10 @@ export class Network {
     return wireless ? 'Wireless0' : 'FastEthernet0';
   }
 
+  private isWirelessAccessPoint(d: RtDevice): boolean {
+    return d.kind === 'ap' || (d.kind === 'router' && d.ports.has('Wireless0') && !!d.doc.wireless);
+  }
+
   /** Access point a wireless client is associated with (matching SSID / key, powered, in range). */
   association(d: RtDevice): RtDevice | undefined {
     const w = d.host?.wifi;
@@ -556,7 +606,7 @@ export class Network {
     let best: RtDevice | undefined;
     let bestDist = Infinity;
     for (const ap of this.devices.values()) {
-      if (ap.kind !== 'ap' || !ap.doc.powered || !ap.doc.wireless) continue;
+      if (!this.isWirelessAccessPoint(ap) || !ap.doc.powered || !ap.doc.wireless) continue;
       const cfg = ap.doc.wireless;
       if (cfg.ssid !== w.ssid) continue;
       if (cfg.security === 'wpa2' && (cfg.key.length < 8 || cfg.key !== w.key)) continue;
@@ -1010,6 +1060,9 @@ export class Network {
   /** Puts a frame on the wire. */
   private transmit(d: RtDevice, port: string, f: Frame): void {
     if (d.ports.get(port)?.spec.media === 'wireless') return this.radioTransmit(d, port, f);
+    if (d.doc.model === 'WirelessRouter-PT' && port.startsWith('GigabitEthernet') && !this.peer(d.doc.id, port)) {
+      return this.radioTransmit(d, 'Wireless0', f);
+    }
     const pr = this.peer(d.doc.id, port);
     if (!pr) return this.drop(d, f, dropReason('no_cable', { port }), port);
     if (!this.portStatus(d.doc.id, port).proto) return this.drop(d, f, dropReason('link_down', { port }), port);
@@ -1052,7 +1105,8 @@ export class Network {
     if (frame.hops > L2_HOP_LIMIT) return this.drop(d, f, dropReason('l2_loop'), port);
     const at = this.now + 0.5;
     const targets: { dev: RtDevice; port: string }[] = [];
-    if (d.kind === 'ap') {
+    const isAp = this.isWirelessAccessPoint(d);
+    if (isAp) {
       for (const c of this.devices.values()) {
         if (this.association(c) !== d) continue;
         const mac = c.ports.get('Wireless0')!.mac;
@@ -1061,10 +1115,10 @@ export class Network {
       }
     } else {
       const ap = this.association(d);
-      if (ap) targets.push({ dev: ap, port: 'Port 1' });
+      if (ap) targets.push({ dev: ap, port: ap.kind === 'ap' ? 'Port 1' : 'Wireless0' });
     }
     for (const t of targets) {
-      this.record({ device: d.doc.id, kind: 'tx', proto: protoOf(frame), info: describeFrame(frame), port, link: `wifi:${d.kind === 'ap' ? t.dev.doc.id : d.doc.id}`, to: t.dev.doc.id, arrive: at, frame });
+      this.record({ device: d.doc.id, kind: 'tx', proto: protoOf(frame), info: describeFrame(frame), port, link: `wifi:${isAp ? t.dev.doc.id : d.doc.id}`, to: t.dev.doc.id, arrive: at, frame });
       this.enqueue(at, t.dev.doc.id, t.port, frame);
     }
   }
@@ -1202,6 +1256,19 @@ export class Network {
   private endReceive(d: RtDevice, port: string, f: Frame): void {
     let iface = port;
     if (d.ios) {
+      if (d.doc.model === 'WirelessRouter-PT' && port === 'Wireless0') {
+        const lan = d.dataPorts()
+          .filter((name) => name.startsWith('GigabitEthernet'))
+          .map((name) => this.l3If(d, name))
+          .find((candidate) => {
+            if (!candidate || !this.ifUp(d, candidate.name)) return false;
+            if (f.type === 'arp') return candidate.ip === f.arp!.tpa;
+            if (f.type === 'ipv4') return candidate.ip === f.ip!.dst;
+            const iface6 = this.l3Ifs6(d).find((item) => item.name === candidate.name);
+            return !!iface6 && (iface6.ll === f.ip6!.dst || iface6.addrs.some((address) => address.ip === f.ip6!.dst));
+          });
+        if (lan) iface = lan.name;
+      }
       const subs = [...d.ios.interfaces.values()].filter((c) => c.name.startsWith(port + '.') && c.dot1q);
       if (f.tag !== undefined) {
         const sub = subs.find((c) => c.dot1q!.vlan === f.tag);

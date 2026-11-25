@@ -9,7 +9,8 @@
  */
 
 export type DeviceKind = 'router' | 'switch' | 'l3switch' | 'host' | 'hub' | 'ap';
-export type HostRole = 'pc' | 'laptop' | 'server' | 'printer' | 'smartphone' | 'tablet';
+export type HostRole = 'pc' | 'laptop' | 'server' | 'printer' | 'smartphone' | 'tablet' | 'ipphone' | 'iot';
+export type DeviceRole = HostRole | 'wireless-router' | 'firewall' | 'modem' | 'cloud';
 export type Media = 'copper' | 'fiber' | 'serial' | 'console' | 'rs232' | 'wireless';
 export type CableType = 'straight' | 'crossover' | 'console' | 'fiber' | 'serial-dce' | 'serial-dte';
 

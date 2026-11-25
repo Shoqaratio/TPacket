@@ -19,7 +19,7 @@ l'établissement qui héberge l'instance). Réponse visée sous 5 jours ouvrés.
 | Modification après soumission | Instantané immuable : garde ORM + trigger PostgreSQL, SHA-256 | `test_snapshot_is_immutable` |
 | Injection SQL | Requêtes paramétrées SQLAlchemy uniquement | — |
 | XSS | React (pas de `dangerouslySetInnerHTML`), CSP stricte sans script inline (Nginx) | — |
-| Documents malveillants | Validation structurelle bornée (`validateProject`), configuration rejouée par le parseur, tailles maximales | `validateProject rejects…` |
+| Documents malveillants | Validation structurelle bornée (`validateProject`), configuration rejouée par le parseur, tailles maximales ; fragments presse-papiers validés avant import et IDs/MAC régénérés | `validateProject rejects…`, `selectionClipboard.test.ts` |
 | Épuisement du moteur | Budget d'événements, limite de sauts L2, timeout/CPU/heap du grader, limites de conteneur | `STP…`, budget |
 | Connexions réelles | Le moteur n'ouvre aucune socket ; le conteneur API est sur un réseau Docker interne | — |
 | WebSocket collaboratif | Cookie de session validé, contrôle d'origine navigateur, autorisations propriétaire/partage, rôle lecture/écriture et taille maximale des messages | `test_classes.py` |

@@ -35,6 +35,23 @@ test('signing out returns to the required sign-in screen', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Nouveau projet' })).toHaveCount(0);
 });
 
+test('copies a device between projects through the system clipboard', async ({ page }) => {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await registerAndSignIn(page, 'clipboard');
+  await page.getByRole('button', { name: 'Nouveau projet' }).click();
+  await drop(page, 'IP-Phone-PT', 500, 300);
+  const device = page.locator('.react-flow__node-device');
+  await expect(device).toHaveCount(1);
+  await device.click();
+  await page.keyboard.press('Control+c');
+
+  await page.getByRole('button', { name: 'Fichier' }).click();
+  await page.getByRole('menuitem', { name: 'Nouveau projet' }).click();
+  await expect(page.locator('.react-flow__node-device')).toHaveCount(0);
+  await page.keyboard.press('Control+v');
+  await expect(page.locator('.react-flow__node-device')).toHaveCount(1);
+});
+
 test('build a LAN, configure it from the GUI and the CLI, and ping for real', async ({ page }) => {
   await registerAndSignIn(page, 'lab');
   await page.getByRole('button', { name: 'Nouveau projet' }).click();
