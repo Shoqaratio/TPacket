@@ -14,6 +14,10 @@ def test_register_login_me_logout():
     assert c.get("/api/auth/me").status_code == 200
 
 
+def test_anonymous_cannot_access_projects():
+    assert Client(app).get("/api/projects").status_code == 401
+
+
 def test_session_cookie_is_httponly_and_password_hashed_with_argon2id():
     c = Client(app)
     r = c.post("/api/auth/register", json={"email": "a@example.org", "password": PASSWORD, "display_name": "A"})

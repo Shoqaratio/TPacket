@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { registerAndSignIn } from './auth';
 
 async function drop(page: Page, model: string, x: number, y: number) {
   const dt = await page.evaluateHandle((m) => {
@@ -18,8 +19,24 @@ async function typeInTerminal(page: Page, text: string) {
   await page.keyboard.type(text);
 }
 
-test('build a LAN, configure it from the GUI and the CLI, and ping for real', async ({ page }) => {
+test('requires sign-in before the simulator or project data can be accessed', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Connexion requise' })).toBeVisible();
+  await expect(page.getByRole('form', { name: 'Connexion' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Nouveau projet' })).toHaveCount(0);
+  const projects = await page.request.get('http://localhost:8000/api/projects');
+  expect(projects.status()).toBe(401);
+});
+
+test('signing out returns to the required sign-in screen', async ({ page }) => {
+  await registerAndSignIn(page, 'logout');
+  await page.getByRole('button', { name: 'Déconnexion' }).click();
+  await expect(page.getByRole('heading', { name: 'Connexion requise' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Nouveau projet' })).toHaveCount(0);
+});
+
+test('build a LAN, configure it from the GUI and the CLI, and ping for real', async ({ page }) => {
+  await registerAndSignIn(page, 'lab');
   await page.getByRole('button', { name: 'Nouveau projet' }).click();
   await expect(page.locator('.react-flow')).toBeVisible();
 
@@ -57,7 +74,7 @@ test('build a LAN, configure it from the GUI and the CLI, and ping for real', as
 });
 
 test('IOS CLI: modes, abbreviations, contextual help and errors', async ({ page }) => {
-  await page.goto('/');
+  await registerAndSignIn(page, 'cli');
   await page.getByRole('button', { name: 'Nouveau projet' }).click();
   await drop(page, '1941', 600, 300);
   await page.locator('.react-flow__node-device').first().click();
@@ -78,7 +95,7 @@ test('IOS CLI: modes, abbreviations, contextual help and errors', async ({ page 
 });
 
 test('simulation mode: step a PDU, inspect it layer by layer', async ({ page }) => {
-  await page.goto('/');
+  await registerAndSignIn(page, 'simulation');
   await page.getByRole('button', { name: 'Nouveau projet' }).click();
   await drop(page, '2960-24TT', 560, 200);
   await drop(page, 'PC', 420, 380);

@@ -44,6 +44,7 @@ Sur le dépôt GitHub, chaque push sur `main` est déployé après la réussite 
 joignable depuis les runners GitHub hébergés). Pendant la reconstruction et le redémarrage, la
 passerelle affiche une page de mise à jour, puis réactive le site après vérification de l'API et du
 frontend. Les conteneurs API et web sont redémarrés; la passerelle, PostgreSQL et Redis restent actifs.
+Une connexion ou la création d'un compte est nécessaire pour accéder à l'interface et aux projets.
 En cas d'échec, la page reste affichée pour éviter de présenter un service incomplet.
 
 ## Tests

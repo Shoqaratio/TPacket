@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { registerAndSignIn } from './auth';
 
 async function drop(page: Page, model: string, x: number, y: number) {
   const dt = await page.evaluateHandle((m) => {
@@ -10,7 +11,7 @@ async function drop(page: Page, model: string, x: number, y: number) {
 }
 
 test('wireless laptop gets an address by DHCP from a server and browses its web page', async ({ page }) => {
-  await page.goto('/');
+  await registerAndSignIn(page, 'wifi');
   await page.getByRole('button', { name: 'Nouveau projet' }).click();
   await drop(page, '2960-24TT', 600, 160);
   await drop(page, 'Server', 420, 160);

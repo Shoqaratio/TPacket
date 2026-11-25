@@ -1,6 +1,7 @@
 import { FolderOpen, Moon, Plus, Sun, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, type Me } from '../api';
+import { leaveCollab } from '../collab';
 import { useT } from '../i18n';
 import { createLocalProject, importNetlabFile, openProject, pullCloud } from '../projects';
 import { storage, type StoredProject } from '../storage';
@@ -61,12 +62,43 @@ export function Home() {
   const [projects, setProjects] = useState<StoredProject[]>([]);
   const file = useRef<HTMLInputElement>(null);
   const reload = () => void storage.list().then(setProjects);
-  useEffect(reload, []);
+  useEffect(() => {
+    if (ui.me) reload();
+    else setProjects([]);
+  }, [ui.me]);
   useEffect(() => {
     if (ui.me) void pullCloud().then(reload).catch(() => {});
   }, [ui.me]);
 
   const signedIn = (me: Me) => ui.set({ me });
+  const signOut = async () => {
+    try {
+      await api('POST', '/auth/logout');
+    } catch {
+      ui.toast(t('auth.logoutFailed'), 'error');
+      return;
+    }
+    for (const id of useUi.getState().tabs.filter((x) => x.startsWith('collab-'))) leaveCollab(id);
+    ui.set({ me: null, tabs: [], active: null, page: 'home' });
+  };
+  if (!ui.me) {
+    return (
+      <main className="nl-scroll grid h-full overflow-auto bg-bg p-6">
+        <section className="m-auto w-full max-w-md rounded-lg border border-line bg-panel p-6 shadow-lg">
+          <header className="mb-5 flex items-center gap-3">
+            <h1 className="text-[17px] font-semibold">TPacket <span className="text-accent">Academy</span></h1>
+            <div className="flex-1" />
+            <button className="rounded px-2 py-1 hover:bg-panel2" onClick={() => ui.set({ locale: ui.locale === 'fr' ? 'en' : 'fr' })}>{ui.locale === 'fr' ? 'EN' : 'FR'}</button>
+            <button aria-label={t('view.theme')} className="rounded p-1.5 hover:bg-panel2" onClick={() => ui.set({ theme: ui.theme === 'dark' ? 'light' : 'dark' })}>{ui.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</button>
+          </header>
+          <h2 className="mb-2 text-[15px] font-semibold">{t('auth.requiredTitle')}</h2>
+          <p className="mb-5 text-[13px] text-muted">{t('auth.requiredDescription')}</p>
+          <AuthForm onDone={signedIn} />
+        </section>
+      </main>
+    );
+  }
+
   return (
     <div className="nl-scroll h-full overflow-auto">
       <header className="flex items-center gap-3 border-b border-line bg-panel px-6 py-3">
@@ -80,7 +112,7 @@ export function Home() {
             {ui.me.memberships.some((m) => m.role !== 'student') && <button className="rounded bg-accent2 px-3 py-1 text-white" onClick={() => ui.set({ page: 'teacher' })}>{t('teacher.title')}</button>}
             {ui.me.memberships.length > 0 && <button className="rounded border border-line px-3 py-1" onClick={() => ui.set({ page: 'student' })}>{t('student.title')}</button>}
             <span className="text-muted">{ui.me.display_name}</span>
-            <button className="rounded border border-line px-2 py-1" onClick={() => void api('POST', '/auth/logout').finally(() => ui.set({ me: null }))}>{t('auth.logout')}</button>
+            <button className="rounded border border-line px-2 py-1" onClick={() => void signOut()}>{t('auth.logout')}</button>
           </>
         )}
       </header>

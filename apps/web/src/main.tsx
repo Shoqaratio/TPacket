@@ -32,7 +32,7 @@ async function joinFromHash(): Promise<void> {
 }
 
 function App() {
-  const { active, theme, locale, set, page } = useUi();
+  const { active, theme, locale, set, page, me } = useUi();
   const opened = useSim((s) => (active ? !!s.views[active] : false));
   const [restored, setRestored] = useState(false);
 
@@ -42,33 +42,46 @@ function App() {
   }, [theme, locale]);
 
   useEffect(() => {
-    const stop = startAutosave();
-    // Re-open the tabs of the previous session, then (if any) join a shared live session.
+    if (me) return startAutosave();
+  }, [me]);
+
+  useEffect(() => {
     const { tabs, active: last } = useUi.getState();
     useUi.setState({ tabs: [] });
+    let cancelled = false;
     void (async () => {
-      for (const id of tabs.filter((x) => !x.startsWith('collab-'))) {
-        await openProject(id).catch(() => {});
-        void restoreAssignment(id);
+      const signedIn = await fetchMe();
+      if (cancelled) return;
+      set({ me: signedIn });
+      if (signedIn) {
+        for (const id of tabs.filter((x) => !x.startsWith('collab-'))) {
+          await openProject(id).catch(() => {});
+          void restoreAssignment(id);
+        }
+        if (last && useUi.getState().tabs.includes(last)) await openProject(last);
+        else useUi.setState({ active: null });
+      } else {
+        set({ tabs: [], active: null, page: 'home' });
       }
-      if (last && useUi.getState().tabs.includes(last)) await openProject(last);
-      else useUi.setState({ active: null });
+      if (cancelled) return;
       setRestored(true);
-      set({ me: await fetchMe() });
-      await joinFromHash();
     })();
     const onHash = () => void joinFromHash();
     addEventListener('hashchange', onHash);
     return () => {
-      stop();
+      cancelled = true;
       removeEventListener('hashchange', onHash);
     };
   }, [set]);
 
+  useEffect(() => {
+    if (me) void joinFromHash();
+  }, [me]);
+
   if (!restored) return null;
   return (
     <>
-      {active && opened ? <Workspace key={active} project={active} /> : page === 'teacher' ? <TeacherPage /> : page === 'student' ? <StudentPage /> : <Home />}
+      {me ? active && opened ? <Workspace key={active} project={active} /> : page === 'teacher' ? <TeacherPage /> : page === 'student' ? <StudentPage /> : <Home /> : <Home />}
       <Toasts />
     </>
   );
