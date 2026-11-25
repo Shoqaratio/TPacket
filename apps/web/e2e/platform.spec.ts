@@ -9,16 +9,24 @@ test('academy navigation exposes dashboard, courses, exercises, activities and p
   await nav.getByRole('button', { name: 'Mes cours' }).click();
   await expect(masthead).toBeVisible();
   await expect(page.locator('.nl-page-enter')).toBeVisible();
-  await expect(page.getByText('Aucun cours disponible')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Fondamentaux des réseaux' })).toBeVisible();
   await nav.getByRole('button', { name: 'Mes exercices' }).click();
   await expect(masthead).toBeVisible();
-  await expect(page.getByText('Aucun exercice publié')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Premier LAN : connecter deux PC' })).toBeVisible();
   await nav.getByRole('button', { name: 'Mon profil' }).click();
   await expect(masthead).toBeVisible();
   await expect(page.getByText('Informations du compte')).toBeVisible();
   await nav.getByRole('button', { name: 'Mes activités' }).click();
   await expect(masthead).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Mes devoirs' })).toBeVisible();
+});
+
+test('starter exercise opens a prepared topology in the simulator', async ({ page }) => {
+  await registerAndSignIn(page, 'starter');
+  await page.getByRole('navigation', { name: 'Navigation pédagogique' }).getByRole('button', { name: 'Mes exercices' }).click();
+  await page.getByRole('button', { name: 'S’entraîner' }).first().click();
+  await expect(page.locator('.react-flow__node-device')).toHaveCount(3);
+  await expect(page.getByText(/OBJECTIF/)).toBeVisible();
 });
 
 async function drop(page: Page, model: string, x: number, y: number) {
@@ -145,8 +153,9 @@ test('teacher creates a class and an assignment; the student joins, submits and 
   await sp.getByRole('button', { name: 'Rejoindre' }).click();
   const nav = sp.getByRole('navigation', { name: 'Navigation pédagogique' });
   await nav.getByRole('button', { name: 'Mes exercices' }).click();
-  await expect(sp.getByRole('heading', { name: 'Adresser PC0' })).toBeVisible();
-  await sp.getByRole('button', { name: 'S’entraîner' }).click();
+  const exercise = sp.locator('article').filter({ has: sp.getByRole('heading', { name: 'Adresser PC0' }) });
+  await expect(exercise).toBeVisible();
+  await exercise.getByRole('button', { name: 'S’entraîner' }).click();
   await expect(sp.locator('.react-flow')).toBeVisible();
   await sp.getByRole('button', { name: 'Fichier' }).click();
   await sp.getByRole('menuitem', { name: 'Retour aux projets' }).click();
