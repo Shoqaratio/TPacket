@@ -19,3 +19,5 @@ services:
     networks: [backend, frontend]
   web:
     profiles: ["prod-web"]
+  gateway:
+    profiles: ["prod-web"]

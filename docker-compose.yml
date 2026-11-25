@@ -1,5 +1,5 @@
 # Production-style deployment (self-hostable in a school). Put a TLS terminator (or the school's
-# reverse proxy) in front of the "web" service and keep NETLAB_COOKIE_SECURE=true.
+# reverse proxy) in front of the "gateway" service and keep NETLAB_COOKIE_SECURE=true.
 # Development: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 services:
   db:
@@ -22,7 +22,7 @@ services:
 
   api:
     build: { context: ., dockerfile: apps/api/Dockerfile }
-    env_file: .env
+    env_file: ${TPACKET_ENV_FILE:-.env}
     environment:
       NETLAB_DATABASE_URL: postgresql+psycopg://netlab:${POSTGRES_PASSWORD}@db:5432/netlab
     depends_on:
@@ -37,9 +37,17 @@ services:
 
   web:
     build: { context: ., dockerfile: apps/web/Dockerfile }
-    ports: ["${HTTP_PORT:-8080}:80"]
     depends_on: [api]
     networks: [backend, frontend]
+
+  gateway:
+    image: nginx:1.27-alpine
+    ports: ["${HTTP_PORT:-8080}:80"]
+    depends_on: [web]
+    volumes:
+      - ./infra/gateway:/etc/nginx/conf.d:ro
+      - ${TPACKET_MAINTENANCE_DIR:-./maintenance}:/etc/nginx/maintenance:ro
+    networks: [frontend]
 
 networks:
   # The backend network is internal: the API (and the grader it spawns) has no route to the Internet.

@@ -9,5 +9,6 @@ apps/api/*.db
 coverage/
 playwright-report/
 test-results/
+maintenance/maintenance.flag
 apps/web/test-results/
 apps/web/dev-dist/
