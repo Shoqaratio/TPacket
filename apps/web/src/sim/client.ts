@@ -105,7 +105,8 @@ export const sim = {
     useSim.setState((s) => ({ events: { ...s.events, [project]: [] } }));
     return call<null>({ method: 'simReset', project });
   },
-  simPdu: (project: string, src: string, dst: string) => call<number>({ method: 'simPdu', project, src, dst }),
+  simPdu: (project: string, src: string, dst: string, protocol: 'icmp' | 'tcp' | 'udp' = 'icmp', dstPort?: number) =>
+    call<number>({ method: 'simPdu', project, src, dst, protocol, ...(dstPort !== undefined ? { dstPort } : {}) }),
   onConsole(project: string, device: string, fn: (text: string) => void): () => void {
     const key = `${project}|${device}`;
     const set = consoleListeners.get(key) ?? new Set();

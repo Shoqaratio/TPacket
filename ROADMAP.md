@@ -23,8 +23,8 @@ Légende : ✅ fait et testé · 🟡 partiel · ⬜ à faire. Chaque phase doit
 - ⬜ Édition de ligne CLI complète (curseur, Ctrl+A/E/W).
 - ⬜ Copier/coller inter-projets (sérialiser la sélection dans le presse-papiers).
 
-## Phase 3 — Simulateur avancé 🟡
-- ✅ VLAN, trunk 802.1Q, DTP, STP, routage inter-VLAN, ACL numérotées, mode simulation, inspection.
+## Phase 3 — Simulateur avancé ✅
+- ✅ VLAN, trunk 802.1Q, DTP, STP, routage inter-VLAN, ACL numérotées et nommées (standard/étendues), mode simulation, inspection.
 - 🟡 **RIPv1/v2** : état convergé calculé (Bellman-Ford), split horizon, `passive-interface`,
   `auto-summary`, compatibilité de versions et `show ip protocols`. Pas de paquets UDP 520 ni de
   temporisation de convergence.
@@ -33,8 +33,12 @@ Légende : ✅ fait et testé · 🟡 partiel · ⬜ à faire. Chaque phase doit
 - 🟡 **TCP et services** : TCP minimal avec retransmissions ; DHCP (pools IOS/serveur, relais et
   client), DNS, TFTP, HTTP(S), Telnet/SSH VTY. Pas de FTP/SMTP/POP3/NTP ni de pile TCP complète.
 - 🟡 **NAT/PAT** : statique, pools et surcharge PAT.
-- 🟡 **IPv6** : adressage statique, link-local EUI-64, NDP, ICMPv6 et routage statique.
-- ⬜ ACL nommées, SLAAC, DHCPv6, OSPFv3, PDU complexes et export PCAP.
+- ✅ **IPv6** : adressage statique, link-local EUI-64, SLAAC, DHCPv6 stateful, NDP, ICMPv6 et routes statiques ; OSPFv3 (un processus, aires par interface).
+- ✅ PDU complexes ICMP/TCP/UDP et export PCAP Ethernet (trames émises).
+
+Les protocoles de routage affichent l'état convergé calculé : les paquets de contrôle et les
+temporisations de convergence ne sont pas simulés. Les sous-ensembles et écarts sont détaillés dans
+`COMPATIBILITY.md`.
 
 ## Phase 4 — Plateforme pédagogique 🟡
 - ✅ Classes, adhésions, codes d'inscription, annonces, devoirs/examens, dates d'ouverture/échéance,

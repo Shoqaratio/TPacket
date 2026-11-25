@@ -9,7 +9,7 @@ import { type AclEntry, defaultIosConfig, type IfConfig, type IosConfig, renderR
 import { loadIosConfig } from '../ios/load';
 import { Apps } from './apps';
 import { type NatEntry, natInbound, natOutbound } from './nat';
-import { type AppData, cloneFrame, describeFrame, type DhcpMsg, type Frame, type IcmpPkt, type Ipv4Pkt, type Ipv6Pkt, type IpQuote, protoOf, type TcpFlags } from './packets';
+import { type AppData, cloneFrame, describeFrame, type Dhcp6Msg, type DhcpMsg, type Frame, type IcmpPkt, type Ipv4Pkt, type Ipv6Pkt, type IpQuote, protoOf, type TcpFlags } from './packets';
 import { computeDynamic, type DynamicResult } from './routing';
 import { computeStp, portCost, type StpBridge, type StpRole } from './stp';
 
@@ -19,6 +19,8 @@ const ARP_AGING_IOS = 4 * 3600_000;
 const ARP_AGING_HOST = 120_000;
 const L2_HOP_LIMIT = 64;
 const EVENT_BUDGET = 200_000;
+const ALL_ROUTERS6 = (0xff02n << 112n) | 0x2n;
+const DHCP_SERVERS6 = (0xff02n << 112n) | 0x10002n;
 /** Radio range of an access point, in canvas units. */
 export const WIFI_RANGE = 400;
 
@@ -103,10 +105,11 @@ export interface L3If6 {
 }
 
 export interface Route6 {
-  type: 'C' | 'L' | 'S';
+  type: 'C' | 'L' | 'S' | 'O';
   prefix: bigint;
   len: number;
   ad: number;
+  metric?: number;
   nextHop?: bigint;
   iface?: string;
 }
@@ -138,6 +141,7 @@ export class RtDevice {
   natTable: NatEntry[] = [];
   /** IPv6 neighbor cache. */
   nd = new Map<bigint, { mac: string; iface: string; at: number }>();
+  dhcp6Bindings = new Map<bigint, { mac: string; at: number }>();
   pendingNd = new Map<bigint, { since: number; packets: { iface: string; pkt: Ipv6Pkt }[] }>();
 
   constructor(public doc: DeviceDoc) {
@@ -431,9 +435,15 @@ export class Network {
     if (next.ip && next.mask && !isUsableHost(parseIp(next.ip)!, parseIp(next.mask)!)) throw new P.ModelError('invalid_host', 'Network or broadcast address is not a valid host address');
     if (next.ipv6 && (!parseCidr6(next.ipv6) || isLinkLocal(parseCidr6(next.ipv6)!.ip))) throw new P.ModelError('invalid_ipv6', 'Invalid IPv6 address/prefix');
     if (next.ipv6Gateway && parseIp6(next.ipv6Gateway) === null) throw new P.ModelError('invalid_ipv6', 'Invalid IPv6 gateway');
+    if (next.ipv6Mode !== undefined && !['static', 'slaac', 'dhcpv6'].includes(next.ipv6Mode)) throw new P.ModelError('invalid_ipv6', 'Invalid IPv6 mode');
     if (next.wifi) next.wifi = { ssid: String(next.wifi.ssid ?? '').slice(0, 32), key: String(next.wifi.key ?? '').slice(0, 63) };
     const changedIp = next.ip !== d.doc.host.ip || next.mask !== d.doc.host.mask;
+    const changedIpv6 = next.ipv6 !== d.doc.host.ipv6 || next.ipv6Gateway !== d.doc.host.ipv6Gateway || next.ipv6Mode !== d.doc.host.ipv6Mode;
     d.doc.host = next;
+    if (changedIpv6) {
+      d.nd.clear();
+      d.pendingNd.clear();
+    }
     if (changedIp) {
       d.arp.clear();
       d.ipConflict = undefined;
@@ -858,10 +868,18 @@ export class Network {
    * points and switches (VLAN membership, trunks, STP forwarding state) like a broadcast would.
    */
   broadcastDomain(d: RtDevice, ifName: string): { dev: RtDevice; iface: L3If }[] {
-    const out: { dev: RtDevice; iface: L3If }[] = [];
+    return this.broadcastDomainFor(d, ifName, (dev, name) => this.l3Ifs(dev).find((x) => x.name === name));
+  }
+
+  broadcastDomain6(d: RtDevice, ifName: string): { dev: RtDevice; iface: L3If6 }[] {
+    return this.broadcastDomainFor(d, ifName, (dev, name) => this.l3Ifs6(dev).find((x) => x.name === name));
+  }
+
+  private broadcastDomainFor<T extends { name: string }>(d: RtDevice, ifName: string, getIface: (dev: RtDevice, name: string) => T | undefined): { dev: RtDevice; iface: T }[] {
+    const out: { dev: RtDevice; iface: T }[] = [];
     const seen = new Set<string>();
     const add = (dev: RtDevice, name: string) => {
-      const i = this.l3Ifs(dev).find((x) => x.name === name);
+      const i = getIface(dev, name);
       if (i && this.ifUp(dev, name) && !out.some((o) => o.dev === dev && o.iface.name === name)) out.push({ dev, iface: i });
     };
     const visitSwitch = (sw: RtDevice, vlan: number, ingress?: string) => {
@@ -1195,7 +1213,8 @@ export class Network {
       }
       if (!this.ifUp(d, iface)) return this.drop(d, f, dropReason('iface_down', { iface }), port);
     } else if (f.tag !== undefined) return this.drop(d, f, dropReason('tagged_on_access', { port }), port);
-    if (!f.hdlc && f.dst !== BROADCAST_MAC && f.dst !== this.ifMac(d, iface)) return this.drop(d, f, dropReason('not_my_mac'), port);
+    const ipv6Multicast = f.type === 'ipv6' && f.dst.startsWith('3333');
+    if (!f.hdlc && f.dst !== BROADCAST_MAC && f.dst !== this.ifMac(d, iface) && !ipv6Multicast) return this.drop(d, f, dropReason('not_my_mac'), port);
     this.l3Receive(d, iface, f);
   }
 
@@ -1359,17 +1378,17 @@ export class Network {
   aclPermits(d: RtDevice, name: string, p: Ipv4Pkt, count = true): boolean {
     const acl = d.ios?.acls.get(name);
     if (!acl) return true; // IOS: an undefined ACL permits everything
-    for (const e of acl) if (this.aclMatch(name, e, p)) {
+    for (const e of acl) if (this.aclMatch(d, name, e, p)) {
       if (count) e.matches++;
       return e.action === 'permit';
     }
     return false;
   }
 
-  private aclMatch(name: string, e: AclEntry, p: Ipv4Pkt): boolean {
+  private aclMatch(d: RtDevice, name: string, e: AclEntry, p: Ipv4Pkt): boolean {
     if (!wildcardMatch(p.src, e.src.ip, e.src.wildcard)) return false;
-    const n = Number(name);
-    if (n >= 1 && n <= 99) return true;
+    const type = d.ios?.aclTypes.get(name);
+    if (type === 'standard' || (!type && Number(name) >= 1 && Number(name) <= 99)) return true;
     if (e.proto !== 'ip' && e.proto !== p.proto) return false;
     if (e.dst && !wildcardMatch(p.dst, e.dst.ip, e.dst.wildcard)) return false;
     if (e.dstPort !== undefined && (p.udp ?? p.tcp)?.dport !== e.dstPort) return false;
@@ -1526,6 +1545,21 @@ export class Network {
     return this.originate(d, { src: 0, dst, ttl: this.defaultTtl(d), proto: 'icmp', id: this.ipId++, icmp: { type: 8, code: 0, ident, seq: 0 } });
   }
 
+  injectPdu(devId: string, dst: number, protocol: 'icmp' | 'tcp' | 'udp', dstPort: number, onResult: (o: EchoOutcome) => void): { sent: boolean; sourcePort?: number } {
+    if (protocol === 'icmp') return { sent: this.injectEcho(devId, dst, onResult) };
+    const d = this.dev(devId);
+    const sport = this.allocPort();
+    const key = `${devId}|${protocol === 'tcp' ? 't' : 'u'}|${sport}`;
+    this.waiters.set(key, onResult);
+    if (protocol === 'udp') {
+      const data: AppData | undefined = dstPort === 53
+        ? { app: 'dns', dns: { id: this.ipId & 0xffff, qname: 'tpacket.invalid' } }
+        : undefined;
+      return { sent: this.originate(d, { src: 0, dst, ttl: this.defaultTtl(d), proto: 'udp', id: this.ipId++, udp: { sport, dport: dstPort, ...(data ? { data } : {}) } }), sourcePort: sport };
+    }
+    return { sent: this.originate(d, { src: 0, dst, ttl: this.defaultTtl(d), proto: 'tcp', id: this.ipId++, tcp: { sport, dport: dstPort, flags: 'SYN', seq: 1000, ack: 0 } }), sourcePort: sport };
+  }
+
   /** Lets protocols converge (STP timers, gratuitous ARPs) — used before grading and by "Fast Forward Time". */
   converge(ms = 2 * FORWARD_DELAY + 1000): void {
     this.advance(ms);
@@ -1610,6 +1644,42 @@ export class Network {
     return { ok: false };
   }
 
+  ipv6Renew(devId: string): { ok: boolean; ipv6?: string; gateway?: string } {
+    const d = this.dev(devId);
+    const host = d.host;
+    if (!host || (host.ipv6Mode !== 'slaac' && host.ipv6Mode !== 'dhcpv6')) return { ok: false };
+    const ifName = this.hostIf(d);
+    const iface = this.l3Ifs6(d).find((i) => i.name === ifName);
+    if (!iface || !this.portStatus(devId, ifName).proto) return { ok: false };
+    const ident = this.ident++ & 0xffff;
+    const ra = this.probe(d, `${devId}|ra6|${ident}`, 2000, () => {
+      const request: Ipv6Pkt = { src: iface.ll, dst: ALL_ROUTERS6, hop: 255, icmp6: { type: 133, code: 0, ident } };
+      this.ifTransmit(d, ifName, { src: iface.mac, dst: multicastMac6(ALL_ROUTERS6), type: 'ipv6', ip6: request, hops: 0 });
+      return true;
+    });
+    if (ra.kind !== 'reply') return { ok: false };
+    if (host.ipv6Mode === 'slaac') return host.ipv6 ? { ok: true, ipv6: host.ipv6, ...(host.ipv6Gateway ? { gateway: host.ipv6Gateway } : {}) } : { ok: false };
+
+    const xid = this.ipId++ & 0xffffff;
+    const exchange = (msg: Dhcp6Msg): EchoOutcome => this.probe(d, `${devId}|u6|546`, 2000, () => {
+      this.send6(d, ifName, DHCP_SERVERS6, { src: iface.ll, dst: DHCP_SERVERS6, hop: 1, udp: { sport: 546, dport: 547, data: { app: 'dhcp6', dhcp6: msg } } });
+      return true;
+    });
+    const clientMac = iface.mac;
+    const advertise = exchange({ op: 'SOLICIT', xid, clientMac });
+    if (advertise.kind !== 'data' || advertise.data.app !== 'dhcp6' || advertise.data.dhcp6.op !== 'ADVERTISE') return { ok: false };
+    const offer = advertise.data.dhcp6;
+    if (offer.address === undefined || !offer.prefix) return { ok: false };
+    const reply = exchange({ op: 'REQUEST', xid, clientMac, address: offer.address });
+    if (reply.kind !== 'data' || reply.data.app !== 'dhcp6' || reply.data.dhcp6.op !== 'REPLY' || reply.data.dhcp6.address === undefined || !reply.data.dhcp6.prefix) return { ok: false };
+    const leaseAddress = reply.data.dhcp6.address;
+    const leasePrefix = reply.data.dhcp6.prefix;
+    if (leaseAddress === undefined || !leasePrefix) return { ok: false };
+    host.ipv6 = `${ip6ToString(leaseAddress)}/${leasePrefix.len}`;
+    this.refresh();
+    return { ok: true, ipv6: host.ipv6, ...(host.ipv6Gateway ? { gateway: host.ipv6Gateway } : {}) };
+  }
+
   /** Name resolution through the configured DNS server (or a literal address). */
   resolveName(devId: string, name: string): { ip?: number; error?: 'no_dns' | 'timeout' | 'nxdomain' } {
     const literal = parseIp(name);
@@ -1629,10 +1699,11 @@ export class Network {
   l3Ifs6(d: RtDevice): L3If6[] {
     if (d.host) {
       const c = parseCidr6(d.host.ipv6 ?? '');
-      if (!c) return [];
       const name = this.hostIf(d);
       const mac = d.ports.get(name)!.mac;
-      return [{ name, mac, ll: linkLocal(mac), addrs: isLinkLocal(c.ip) ? [] : [{ ip: c.ip, len: c.len }] }];
+      const addrs = c && !isLinkLocal(c.ip) ? [{ ip: c.ip, len: c.len }] : [];
+      if (!addrs.length && d.host.ipv6Mode !== 'slaac' && d.host.ipv6Mode !== 'dhcpv6') return [];
+      return [{ name, mac, ll: linkLocal(mac), addrs }];
     }
     if (!d.ios) return [];
     const out: L3If6[] = [];
@@ -1672,6 +1743,7 @@ export class Network {
       }
       if (ok) out.push({ type: 'S', prefix: r.prefix, len: r.len, ad: r.distance, ...(r.nextHop !== undefined ? { nextHop: r.nextHop } : {}), ...(iface ? { iface } : {}) });
     }
+    out.push(...(this.dynamic().routes6.get(d.doc.id) ?? []));
     return out;
   }
 
@@ -1696,6 +1768,7 @@ export class Network {
     if (!me) return;
     const port = d.ports.get(ifName.split('.')[0]!);
     if (port?.spec.media === 'serial') return this.transmit(d, ifName, { src: '', dst: '', type: 'ipv6', ip6: pkt, hdlc: true, hops: 0 });
+    if (isMulticast6(nextHop)) return this.ifTransmit(d, ifName, { src: me.mac, dst: multicastMac6(nextHop), type: 'ipv6', ip6: pkt, hops: 0 });
     const n = d.nd.get(nextHop);
     if (n) return this.ifTransmit(d, ifName, { src: me.mac, dst: n.mac, type: 'ipv6', ip6: pkt, hops: 0 });
     const pend = d.pendingNd.get(nextHop);
@@ -1725,14 +1798,59 @@ export class Network {
     const p = f.ip6!;
     const me = this.l3Ifs6(d).find((i) => i.name === ifName);
     if (!me) return this.drop(d, f, dropReason('no_ipv6', { iface: ifName }));
+    if (p.udp) {
+      if (p.src !== 0n) d.nd.set(p.src, { mac: f.src, iface: ifName, at: this.now });
+      if (d.ios && p.udp.dport === 547 && p.udp.data?.app === 'dhcp6' && isMulticast6(p.dst)) {
+        return this.receiveDhcp6(d, ifName, p, p.udp.data.dhcp6);
+      }
+      if (this.isLocal6(d, p.dst)) {
+        this.record({ device: d.doc.id, kind: 'deliver', proto: 'UDPv6', info: describeFrame(f), frame: f });
+        if (d.host && p.udp.data?.app === 'dhcp6') return this.wake(`${d.doc.id}|u6|${p.udp.dport}`, { kind: 'data', from: 0, rtt: 0, data: p.udp.data });
+        return;
+      }
+      if (!d.ios?.ipv6Routing) return this.drop(d, f, dropReason('not_for_me'));
+      const r = this.resolve6(d, p.dst);
+      if (!r) return this.drop(d, f, dropReason('no_route', { dst: ip6s(p.dst) }));
+      this.record({ device: d.doc.id, kind: 'deliver', proto: 'UDPv6', info: `routed via ${r.iface}`, frame: f });
+      return this.send6(d, r.iface, r.nextHop, { ...p, hop: p.hop - 1 });
+    }
     const ic = p.icmp6;
+    if (!ic) return this.drop(d, f, dropReason('invalid_packet'));
     if (ic.type === 135) {
-      if (ic.lladdr) d.nd.set(p.src, { mac: ic.lladdr, iface: ifName, at: this.now });
+      if (p.src !== 0n) d.nd.set(p.src, { mac: ic.lladdr ?? f.src, iface: ifName, at: this.now });
       this.flushNd(d, p.src);
       if (ic.target !== me.ll && !me.addrs.some((a) => a.ip === ic.target)) return this.drop(d, f, dropReason('arp_not_for_me'));
       this.record({ device: d.doc.id, kind: 'deliver', proto: 'NDP', info: describeFrame(f), frame: f });
       const na: Ipv6Pkt = { src: ic.target!, dst: p.src, hop: 255, icmp6: { type: 136, code: 0, target: ic.target!, lladdr: me.mac } };
       return this.ifTransmit(d, ifName, { src: me.mac, dst: ic.lladdr ?? BROADCAST_MAC, type: 'ipv6', ip6: na, hops: 0 });
+    }
+    if (ic.type === 133) {
+      if (p.src !== 0n) d.nd.set(p.src, { mac: f.src, iface: ifName, at: this.now });
+      const prefix = me.addrs.find((a) => !isLinkLocal(a.ip));
+      if (!d.ios?.ipv6Routing || !prefix) return this.drop(d, f, dropReason('no_ipv6', { iface: ifName }));
+      this.record({ device: d.doc.id, kind: 'deliver', proto: 'NDP', info: describeFrame(f), frame: f });
+      const ra: Ipv6Pkt = {
+        src: me.ll,
+        dst: p.src,
+        hop: 255,
+        icmp6: { type: 134, code: 0, ident: ic.ident, prefix: { network: network6(prefix.ip, prefix.len), len: prefix.len }, managed: !!d.ios.interfaces.get(ifName)?.ipv6Managed },
+      };
+      return this.ifTransmit(d, ifName, { src: me.mac, dst: f.src, type: 'ipv6', ip6: ra, hops: 0 });
+    }
+    if (ic.type === 134) {
+      if (d.host) {
+        d.nd.set(p.src, { mac: f.src, iface: ifName, at: this.now });
+        if (isLinkLocal(p.src)) d.host.ipv6Gateway = ip6ToString(p.src);
+        if (d.host.ipv6Mode === 'slaac' && ic.prefix) {
+          const hostBits = (1n << BigInt(128 - ic.prefix.len)) - 1n;
+          const address = network6(ic.prefix.network, ic.prefix.len) | (me.ll & hostBits);
+          d.host.ipv6 = `${ip6ToString(address)}/${ic.prefix.len}`;
+        }
+        this.refresh();
+        this.wake(`${d.doc.id}|ra6|${ic.ident}`, { kind: 'reply', from: 0, rtt: 0, ttl: p.hop });
+      }
+      this.record({ device: d.doc.id, kind: 'deliver', proto: 'NDP', info: describeFrame(f), frame: f });
+      return;
     }
     if (ic.type === 136) {
       if (ic.target !== undefined && ic.lladdr) d.nd.set(ic.target, { mac: ic.lladdr, iface: ifName, at: this.now });
@@ -1770,6 +1888,35 @@ export class Network {
     this.send6(d, r.iface, r.nextHop, { ...p, hop: p.hop - 1 });
   }
 
+  private receiveDhcp6(d: RtDevice, ifName: string, p: Ipv6Pkt, msg: Dhcp6Msg): void {
+    const cfg = d.ios?.interfaces.get(ifName);
+    const pool = cfg?.dhcp6Pool ? d.ios?.dhcp6Pools.get(cfg.dhcp6Pool) : undefined;
+    const prefix = pool?.prefix;
+    const me = this.l3Ifs6(d).find((i) => i.name === ifName);
+    if (!prefix || !me) return this.drop(d, { src: '', dst: '', type: 'ipv6', ip6: p, hops: 0 }, dropReason('no_dhcp_pool'));
+    let address: bigint | undefined;
+    if (msg.op === 'SOLICIT') {
+      address = [...d.dhcp6Bindings].find(([, lease]) => lease.mac === msg.clientMac)?.[0];
+      if (address === undefined) {
+        const capacity = 1n << BigInt(128 - prefix.len);
+        for (let offset = 1n; offset < capacity && offset < 100_000n; offset++) {
+          const candidate = prefix.network | offset;
+          if (!d.dhcp6Bindings.has(candidate) && !this.l3Ifs6(d).some((i) => i.addrs.some((a) => a.ip === candidate))) {
+            address = candidate;
+            d.dhcp6Bindings.set(candidate, { mac: msg.clientMac, at: this.now });
+            break;
+          }
+        }
+      }
+    } else if (msg.op === 'REQUEST' && msg.address !== undefined && d.dhcp6Bindings.get(msg.address)?.mac === msg.clientMac) {
+      address = msg.address;
+      d.dhcp6Bindings.set(address, { mac: msg.clientMac, at: this.now });
+    }
+    if (address === undefined) return this.drop(d, { src: '', dst: '', type: 'ipv6', ip6: p, hops: 0 }, dropReason('dhcp_exhausted'));
+    const reply: Dhcp6Msg = { op: msg.op === 'SOLICIT' ? 'ADVERTISE' : 'REPLY', xid: msg.xid, clientMac: msg.clientMac, address, prefix, ...(pool.dns !== undefined ? { dns: pool.dns } : {}) };
+    this.send6(d, ifName, p.src, { src: me.ll, dst: p.src, hop: 64, udp: { sport: 547, dport: 546, data: { app: 'dhcp6', dhcp6: reply } } });
+  }
+
   private flushNd(d: RtDevice, ip: bigint): void {
     const pend = d.pendingNd.get(ip);
     const n = d.nd.get(ip);
@@ -1790,4 +1937,12 @@ export class Network {
 
 function ip6s(n: bigint): string {
   return ip6ToString(n);
+}
+
+function isMulticast6(ip: bigint): boolean {
+  return ip >> 120n === 0xffn;
+}
+
+function multicastMac6(ip: bigint): string {
+  return `3333${(ip & 0xffffffffn).toString(16).padStart(8, '0')}`;
 }

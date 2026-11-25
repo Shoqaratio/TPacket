@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { browse, HostPrompt, parseIp } from '../src';
+import { browse, HostPrompt, parseIp, type EchoOutcome } from '../src';
 import { cli, newNet, pc, pingOk, setHost, twoRouters } from './helpers';
 
 /** R0 - R1 - R2 chain with a LAN (switch + PC) behind R0 and R2. */
@@ -135,6 +135,37 @@ describe('DNS, HTTP, TFTP', () => {
     expect(pingOk(net, p0.id, '192.168.2.100')).toBe(true);
   });
 
+  it('named extended ACLs filter traffic, show their type, and survive config replay', async () => {
+    const { net, p0, r1 } = withServer();
+    cli(net, r1.id, ['enable', 'conf t', 'ip access-list extended WEB', 'deny tcp any host 192.168.2.100 eq www', 'permit ip any any', 'exit', 'int g0/0', 'ip access-group WEB out', 'end']);
+    expect(browse(net, p0.id, 'http://192.168.2.100')).toEqual({ error: 'Request Timeout' });
+    expect(pingOk(net, p0.id, '192.168.2.100')).toBe(true);
+    expect(cli(net, r1.id, ['enable', 'show access-lists'])).toContain('Extended IP access list WEB');
+    const { Network, validateProject } = await import('../src');
+    const copy = new Network(validateProject(structuredClone(net.serialize())));
+    expect(copy.dev(r1.id).loadErrors).toEqual([]);
+    expect(copy.runningConfig(copy.dev(r1.id))).toBe(net.runningConfig(net.dev(r1.id)));
+  });
+
+  it('complex simulation PDUs exchange TCP handshakes and UDP application messages', () => {
+    const { net, p0, server } = withServer();
+    const dst = parseIp('192.168.2.100')!;
+    expect(pingOk(net, p0.id, '192.168.2.100')).toBe(true);
+    let tcp: EchoOutcome | undefined;
+    const tcpSent = net.injectPdu(p0.id, dst, 'tcp', 80, (result) => { tcp = result; });
+    expect(tcpSent.sent).toBe(true);
+    net.advance(10_000);
+    expect(tcp?.kind, JSON.stringify(net.log.map((event) => [event.proto, event.kind, event.info, event.reason?.code]))).toBe('synack');
+    expect(net.log.some((event) => event.frame.ip?.tcp?.flags === 'SYN')).toBe(true);
+
+    let udp: EchoOutcome | undefined;
+    const udpSent = net.injectPdu(p0.id, dst, 'udp', 53, (result) => { udp = result; });
+    expect(udpSent.sent).toBe(true);
+    net.advance(10_000);
+    expect(udp?.kind).toBe('data');
+    expect(net.log.some((event) => event.device === server.id && event.proto === 'DNS')).toBe(true);
+  });
+
   it('copy running-config tftp then copy tftp running-config', () => {
     const { net, r0, server } = withServer();
     cli(net, r0.id, ['enable', 'conf t', 'banner motd #saved#', 'end']);
@@ -197,6 +228,47 @@ describe('NAT / PAT', () => {
 });
 
 describe('IPv6', () => {
+  it('OSPFv3 forms neighbors and routes between IPv6-only networks', () => {
+    const net = newNet();
+    const r0 = net.addDevice('1941', 0, 0);
+    const r1 = net.addDevice('1941', 0, 0);
+    const a = net.addDevice('PC', 0, 0);
+    const b = net.addDevice('PC', 0, 0);
+    net.addLink('crossover', { device: a.id, port: 'FastEthernet0' }, { device: r0.id, port: 'GigabitEthernet0/0' });
+    net.addLink('crossover', { device: r0.id, port: 'GigabitEthernet0/1' }, { device: r1.id, port: 'GigabitEthernet0/1' });
+    net.addLink('crossover', { device: b.id, port: 'FastEthernet0' }, { device: r1.id, port: 'GigabitEthernet0/0' });
+    for (const [router, rid, lan, transit] of [
+      [r0, '1.1.1.1', '2001:db8:10::1/64', '2001:db8:12::1/64'],
+      [r1, '2.2.2.2', '2001:db8:20::1/64', '2001:db8:12::2/64'],
+    ] as const) {
+      cli(net, router.id, ['enable', 'conf t', 'ipv6 unicast-routing', 'ipv6 router ospf 10', `router-id ${rid}`, 'exit',
+        'int g0/0', `ipv6 address ${lan}`, 'no shut', 'ipv6 ospf 10 area 0',
+        'int g0/1', `ipv6 address ${transit}`, 'no shut', 'ipv6 ospf 10 area 0', 'end']);
+    }
+    net.setHostConfig(a.id, { ipv6: '2001:db8:10::10/64', ipv6Gateway: '2001:db8:10::1' });
+    net.setHostConfig(b.id, { ipv6: '2001:db8:20::10/64', ipv6Gateway: '2001:db8:20::1' });
+    expect(pc(net, a.id, 'ping 2001:db8:20::10')).toContain('Reply from 2001:DB8:20::10');
+    expect(cli(net, r0.id, ['enable', 'show ipv6 ospf neighbor'])).toContain('2.2.2.2');
+    expect(cli(net, r0.id, ['enable', 'show ipv6 route'])).toContain('O   2001:DB8:20::/64 [110/');
+  });
+
+  it('autoconfigures a host with SLAAC and DHCPv6 and forwards IPv6 traffic', () => {
+    const net = newNet();
+    const r = net.addDevice('1941', 0, 0);
+    const h = net.addDevice('PC', 0, 0);
+    net.addLink('crossover', { device: h.id, port: 'FastEthernet0' }, { device: r.id, port: 'GigabitEthernet0/0' });
+    cli(net, r.id, ['enable', 'conf t', 'int g0/0', 'ipv6 address 2001:db8:3::1/64', 'no shut', 'ipv6 unicast-routing', 'end']);
+    net.setHostConfig(h.id, { ipv6: '', ipv6Mode: 'slaac' });
+    expect(pc(net, h.id, 'ipv6config /renew')).toContain('2001:DB8:3:');
+    expect(pc(net, h.id, 'ping 2001:db8:3::1')).toContain('Reply from 2001:DB8:3::1');
+
+    cli(net, r.id, ['enable', 'conf t', 'ipv6 dhcp pool LAB', 'address prefix 2001:db8:3::/64', 'exit', 'int g0/0', 'ipv6 dhcp server LAB', 'ipv6 nd managed-config-flag', 'end']);
+    net.setHostConfig(h.id, { ipv6: '', ipv6Mode: 'dhcpv6' });
+    expect(pc(net, h.id, 'ipv6config /renew')).toContain('2001:DB8:3::2/64');
+    expect(pc(net, h.id, 'ping 2001:db8:3::1')).toContain('Reply from 2001:DB8:3::1');
+    expect(cli(net, r.id, ['enable', 'show ipv6 dhcp binding'])).toContain('2001:DB8:3::2');
+  });
+
   it('static IPv6 addressing, NDP and routing between two LANs', () => {
     const net = newNet();
     const r = net.addDevice('1941', 0, 0);
@@ -248,7 +320,9 @@ describe('persistence and grading of the new features', () => {
     cli(net, r0.id, ['enable', 'conf t', 'router rip', 'version 2', 'no auto-summary', 'network 10.0.0.0', 'passive-interface g0/0', 'router ospf 10', 'router-id 1.1.1.1', 'network 10.0.0.0 0.0.0.3 area 0',
       'ip dhcp excluded-address 192.168.1.1 192.168.1.9', 'ip dhcp pool LAN', 'network 192.168.1.0 255.255.255.0', 'default-router 192.168.1.1', 'dns-server 192.168.2.100',
       'access-list 1 permit 192.168.1.0 0.0.0.255', 'ip nat inside source list 1 interface s0/0/0 overload', 'ip nat pool PUB 10.0.0.5 10.0.0.6 netmask 255.255.255.252',
-      'int g0/0', 'ip nat inside', 'ipv6 address 2001:db8:1::1/64', 'int s0/0/0', 'ip nat outside', 'ipv6 unicast-routing', 'ipv6 route ::/0 Serial0/0/0', 'end']);
+      'ipv6 unicast-routing', 'ipv6 dhcp pool V6', 'address prefix 2001:db8:1::/64', 'exit', 'ipv6 router ospf 20', 'router-id 2.2.2.2', 'exit',
+      'int g0/0', 'ip nat inside', 'ipv6 address 2001:db8:1::1/64', 'ipv6 ospf 20 area 0', 'ipv6 dhcp server V6', 'int s0/0/0', 'ip nat outside',
+      'ipv6 route ::/0 Serial0/0/0', 'end']);
     const before = net.runningConfig(net.dev(r0.id));
     const n2 = new Network(validateProject(structuredClone(net.serialize())));
     expect(n2.dev(r0.id).loadErrors).toEqual([]);

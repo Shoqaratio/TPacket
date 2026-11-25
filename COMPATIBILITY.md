@@ -59,11 +59,12 @@
 | Préfixe le plus long, distance administrative | Testée (TPacket) | |
 | TTL et traceroute (UDP IOS, ICMP Windows) | Testée (TPacket) | |
 | Routage inter-VLAN (router-on-a-stick, SVI) | Testée (TPacket) | |
-| ACL standard / étendues numérotées (ip, icmp, tcp, udp, `eq`) | Testée (TPacket) | ACL nommées : non implémentées |
+| ACL standard / étendues numérotées et nommées (ip, icmp, tcp, udp, `eq`) | Testée (TPacket) | |
 | RIPv1/v2 | Partielle | Calcul de l'état convergé (Bellman-Ford), split horizon, `passive-interface`, `auto-summary` et compatibilité de versions ; pas de paquets UDP 520 ni de temporisation de convergence |
 | OSPFv2 mono-zone | Partielle | Adjacences dérivées des domaines de diffusion L2, même aire/masque, détection de router-id dupliqué, DR/BDR et SPF ; pas de Hello/LSA simulés ni de délai de convergence |
 | NAT / PAT | Partielle | NAT statique, pools et surcharge PAT ; traduction appliquée au trafic simulé, pas à des paquets externes |
-| IPv6, ICMPv6, ND | Partielle | Adresses statiques, link-local EUI-64, NDP, ICMPv6 et routes statiques ; pas de SLAAC, DHCPv6 ni OSPFv3 |
+| IPv6, ICMPv6, NDP | Testée (TPacket) | Adresses statiques, link-local EUI-64, SLAAC et DHCPv6 stateful (préfixe) ; pas de bail/renouvellement DHCPv6 complet, DNS IPv6 côté client ni SLAAC privacy extensions |
+| OSPFv3 | Partielle | Un processus par routeur, aire configurée par interface, adjacences via le domaine L2 et SPF IPv6 ; état convergé calculé, sans paquets Hello/LSA ni délai de convergence |
 
 ## Couches 4–7
 
@@ -86,18 +87,18 @@
 | `line con/vty`, `login`, `login local`, `username`, `transport input` | Partielle | Sessions VTY simulées ; pas de transport réseau ou de cryptographie réels |
 | running / startup-config, `copy`, `write`, `erase`, `reload`, alimentation | Testée (TPacket) | |
 | `crypto key generate rsa`, `ip ssh version`, `ip domain-name`, `banner motd` | Testée (TPacket) | |
-| `show` : running/startup-config, version, clock, history, ip interface brief, interfaces, ip route, arp, mac address-table, vlan (brief), interfaces trunk, cdp neighbors, spanning-tree, access-lists | Implémentée | Sans compteurs de trafic (non simulés plutôt que fictifs) |
-| `router rip/ospf`, `ip dhcp …`, `ip nat …`, `ipv6 …`, `copy tftp`, `show ip protocols`, `show ip ospf neighbor`, `show ip dhcp binding`, `show ipv6 …` | Partielle | Sous-ensemble de commandes nécessaire aux fonctions simulées ; consulter les messages CLI pour les syntaxes acceptées |
+| `show` : running/startup-config, version, clock, history, ip interface brief, interfaces, ip route, arp, mac address-table, vlan (brief), interfaces trunk, cdp neighbors, spanning-tree, access-lists | Testée (TPacket) | Sans compteurs de trafic (non simulés plutôt que fictifs) |
+| `router rip/ospf`, `ipv6 router ospf`, `ip dhcp …`, `ipv6 dhcp …`, `ip nat …`, `ipv6 …`, `copy tftp`, `show ip protocols`, `show ip ospf neighbor`, `show ipv6 ospf neighbor`, `show ip/ipv6 dhcp binding`, `show ipv6 …` | Partielle | Sous-ensemble de commandes nécessaire aux fonctions simulées ; consulter les messages CLI pour les syntaxes acceptées |
 
 ## Mode simulation
 
 | Élément | Statut | Notes |
 | --- | --- | --- |
 | Lecture, pause, pas à pas, réinitialisation, vitesse | Testée (TPacket) | |
-| PDU simple ICMP, statut réussi/échec | Testée (TPacket) | PDU complexe : non implémenté |
-| Liste d'événements, filtres ARP/ICMP/UDP, animation | Implémentée | |
+| PDU complexe ICMP / TCP / UDP, statut réussi/échec | Testée (TPacket) | Port destination configurable pour TCP/UDP ; transport simulé limité |
+| Liste d'événements, filtres ARP/ICMP/ICMPv6/UDP/TCP/NDP, animation | Testée (TPacket) | |
 | Inspection OSI (L1–L4) et cause de rejet | Testée (TPacket) | |
-| Export PCAP | Non implémentée | |
+| Export PCAP | Testée (TPacket) | PCAP 2.4, Ethernet avec tags 802.1Q, événements d'émission seulement ; trames série HDLC ignorées |
 | Commandes CLI pendant le mode Simulation | Partielle | Exécutées immédiatement (non pas à pas), événements visibles dans la liste |
 
 ## Correction et tutorat

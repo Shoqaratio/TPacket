@@ -192,6 +192,8 @@ function runOp(o: Open, op: OpName, args: unknown[]): unknown {
       return net.setWireless(a[0], a[1]);
     case 'dhcpRenew':
       return net.dhcpRenew(a[0]);
+    case 'ipv6Renew':
+      return net.ipv6Renew(a[0]);
     case 'importConfig': {
       const [dev, text] = args as [string, string];
       const d = net.dev(dev);
@@ -201,7 +203,7 @@ function runOp(o: Open, op: OpName, args: unknown[]): unknown {
   }
 }
 
-const NON_UNDOABLE = new Set<OpName>(['rename', 'dhcpRenew']);
+const NON_UNDOABLE = new Set<OpName>(['rename', 'dhcpRenew', 'ipv6Renew']);
 
 function handle(r: Request): unknown {
   if (r.method === 'open') {
@@ -303,12 +305,25 @@ function handle(r: Request): unknown {
       const dstDev = o.net.dev(r.dst);
       const dstIp = o.net.l3Ifs(dstDev)[0]?.ip ?? parseIp(r.dst);
       if (dstIp === undefined || dstIp === null) throw new ModelError('no_ip', 'Destination has no IP address');
-      const pdu: PduView = { id: ++o.pduSeq, src: src.doc.name, dst: dstDev.doc.name, status: 'in-progress' };
+      const protocol = r.protocol ?? 'icmp';
+      const dstPort = r.dstPort ?? (protocol === 'tcp' ? 80 : 53);
+      if (protocol !== 'icmp' && (!Number.isInteger(dstPort) || dstPort < 1 || dstPort > 65535)) {
+        throw new ModelError('invalid_port', 'Destination port must be between 1 and 65535');
+      }
+      const pdu: PduView = {
+        id: ++o.pduSeq,
+        src: src.doc.name,
+        dst: dstDev.doc.name,
+        protocol,
+        ...(protocol !== 'icmp' ? { dstPort } : {}),
+        status: 'in-progress',
+      };
       o.pdus.push(pdu);
-      const sent = o.net.injectEcho(r.src, dstIp, (res) => {
-        pdu.status = res.kind === 'reply' ? 'successful' : 'failed';
+      const result = o.net.injectPdu(r.src, dstIp, protocol, dstPort, (res) => {
+        pdu.status = res.kind === 'reply' || res.kind === 'data' || res.kind === 'synack' ? 'successful' : 'failed';
       });
-      if (!sent) pdu.status = 'failed';
+      if (!result.sent) pdu.status = 'failed';
+      if (result.sourcePort !== undefined) pdu.srcPort = result.sourcePort;
       publish(r.project, o);
       return pdu.id;
     }

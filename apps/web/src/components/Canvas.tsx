@@ -130,7 +130,7 @@ function WifiEdge({ id, sourceX, sourceY, targetX, targetY }: EdgeProps) {
 
 const edgeTypes = { cable: CableEdge, wifi: WifiEdge };
 
-const PROTO_COLOR: Record<string, string> = { ARP: '#eab308', ICMP: '#a855f7', UDP: '#22d3ee', TCP: '#3b82f6' };
+const PROTO_COLOR: Record<string, string> = { ARP: '#eab308', ICMP: '#a855f7', 'ICMPv6': '#a855f7', NDP: '#eab308', UDP: '#22d3ee', TCP: '#3b82f6' };
 
 /** Animated envelopes for the frames sent during the last simulation step. */
 function PduOverlay({ events, devices, duration }: { events: SimEvent[]; devices: Map<string, DeviceView>; duration: number }) {
@@ -186,6 +186,9 @@ export function Canvas({ project }: { project: string }) {
   const rf = useReactFlow();
   const [drag, setDrag] = useState<Record<string, { x: number; y: number }>>({});
   const [pending, setPending] = useState<{ device: string; port?: string } | null>(null);
+  const [pduConfig, setPduConfig] = useState<{ src: string; dst: string } | null>(null);
+  const [pduProtocol, setPduProtocol] = useState<'icmp' | 'tcp' | 'udp'>('icmp');
+  const [pduPort, setPduPort] = useState(80);
   const [pick, setPick] = useState<PortPick | null>(null);
   const [ctx, setCtx] = useState<string | null>(null);
   const [lastStepSeq, setLastStepSeq] = useState(0);
@@ -245,7 +248,7 @@ export function Canvas({ project }: { project: string }) {
     if (tool.kind === 'pdu') {
       if (!pending) return setPending({ device: dev.id });
       if (pending.device === dev.id) return;
-      void sim.simPdu(project, pending.device, dev.id).catch(fail);
+      setPduConfig({ src: pending.device, dst: dev.id });
       setPending(null);
       return;
     }
@@ -361,6 +364,45 @@ export function Canvas({ project }: { project: string }) {
               </ViewportPortal>
             )}
           </ReactFlow>
+          {pduConfig && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onMouseDown={(e) => e.target === e.currentTarget && setPduConfig(null)}>
+              <form
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="pdu-config-title"
+                className="w-[360px] max-w-[90vw] rounded-lg border border-line bg-panel p-4 text-sm shadow-xl"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void sim.simPdu(project, pduConfig.src, pduConfig.dst, pduProtocol, pduProtocol === 'icmp' ? undefined : pduPort).catch(fail);
+                  setPduConfig(null);
+                }}
+              >
+                <h2 id="pdu-config-title" className="mb-3 text-base font-semibold">{t('sim.pduConfig')}</h2>
+                <label className="mb-3 flex flex-col gap-1">
+                  {t('sim.pduProtocol')}
+                  <select className="rounded border border-line bg-panel2 px-2 py-1" value={pduProtocol} onChange={(e) => {
+                    const value = e.target.value as 'icmp' | 'tcp' | 'udp';
+                    setPduProtocol(value);
+                    setPduPort(value === 'tcp' ? 80 : 53);
+                  }}>
+                    <option value="icmp">ICMP</option>
+                    <option value="tcp">TCP</option>
+                    <option value="udp">UDP</option>
+                  </select>
+                </label>
+                {pduProtocol !== 'icmp' && (
+                  <label className="mb-4 flex flex-col gap-1">
+                    {t('sim.pduDstPort')}
+                    <input className="rounded border border-line bg-panel2 px-2 py-1" type="number" min={1} max={65535} value={pduPort} onChange={(e) => setPduPort(Number(e.target.value))} required />
+                  </label>
+                )}
+                <div className="flex justify-end gap-2">
+                  <button type="button" className="rounded px-3 py-1 hover:bg-panel2" onClick={() => setPduConfig(null)}>{t('sim.pduCancel')}</button>
+                  <button className="rounded bg-accent px-3 py-1 text-white" type="submit">{t('sim.pduSend')}</button>
+                </div>
+              </form>
+            </div>
+          )}
           {hint && (
             <div className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded bg-accent px-3 py-1 text-[12px] text-white shadow">
               {hint}

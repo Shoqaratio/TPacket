@@ -33,6 +33,7 @@ export interface HostConfig {
   /** Static IPv6 address with prefix ("2001:db8:1::10/64"), empty when unused. */
   ipv6?: string;
   ipv6Gateway?: string;
+  ipv6Mode?: 'static' | 'slaac' | 'dhcpv6';
   /** Wireless client settings (laptops, smartphones, tablets). */
   wifi?: { ssid: string; key: string };
 }

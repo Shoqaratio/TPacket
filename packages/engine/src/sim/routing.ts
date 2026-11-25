@@ -11,7 +11,8 @@
  *    DR, and runs SPF with interface costs (reference bandwidth 100 Mbit/s).
  */
 import { classfulMask, ipToString, networkOf, wildcardMatch } from '../net/ipv4';
-import type { L3If, Network, Route, RtDevice } from './network';
+import { ip6ToString, network6 } from '../net/ipv6';
+import type { L3If, L3If6, Network, Route, Route6, RtDevice } from './network';
 
 export interface OspfNeighbor {
   routerId: number;
@@ -21,9 +22,19 @@ export interface OspfNeighbor {
   state: string;
 }
 
+export interface Ospf6Neighbor {
+  routerId: number;
+  address: bigint;
+  iface: string;
+  peerDevice: string;
+  state: string;
+}
+
 export interface DynamicResult {
   routes: Map<string, Route[]>;
+  routes6: Map<string, Route6[]>;
   ospfNeighbors: Map<string, OspfNeighbor[]>;
+  ospf6Neighbors: Map<string, Ospf6Neighbor[]>;
   ospfRouterId: Map<string, number>;
   ripNeighbors: Map<string, number[]>;
 }
@@ -54,9 +65,10 @@ export function ospfCost(d: RtDevice, iface: string): number {
 }
 
 export function computeDynamic(net: Network): DynamicResult {
-  const res: DynamicResult = { routes: new Map(), ospfNeighbors: new Map(), ospfRouterId: new Map(), ripNeighbors: new Map() };
+  const res: DynamicResult = { routes: new Map(), routes6: new Map(), ospfNeighbors: new Map(), ospf6Neighbors: new Map(), ospfRouterId: new Map(), ripNeighbors: new Map() };
   const routers = [...net.devices.values()].filter((d) => d.doc.powered && net.routingEnabled(d) && (d.ios!.rip || d.ios!.ospf));
-  if (!routers.length) return res;
+  const ospf6Routers = [...net.devices.values()].filter((d) => d.doc.powered && d.ios?.ipv6Routing && d.ios.ospf6);
+  if (!routers.length && !ospf6Routers.length) return res;
   const upIfs = new Map<string, L3If[]>(routers.map((d) => [d.doc.id, net.l3Ifs(d).filter((i) => net.ifUp(d, i.name))]));
   const domainCache = new Map<string, Endpoint[]>();
   const domain = (d: RtDevice, i: L3If): Endpoint[] => {
@@ -232,6 +244,110 @@ export function computeDynamic(net: Network): DynamicResult {
       }
     }
     res.routes.get(x.doc.id)!.push(...best.values());
+  }
+
+  // ----------------------------------------------------------------------------- OSPFv3
+  const upIfs6 = new Map<string, L3If6[]>(ospf6Routers.map((d) => [d.doc.id, net.l3Ifs6(d).filter((i) => net.ifUp(d, i.name))]));
+  const area6 = (d: RtDevice, i: L3If6): number | undefined => {
+    const cfg = d.ios?.interfaces.get(i.name)?.ospf6;
+    return cfg && cfg.pid === d.ios?.ospf6?.pid ? cfg.area : undefined;
+  };
+  const rid6 = (d: RtDevice): number => {
+    const cfg = d.ios!.ospf6!;
+    if (cfg.routerId !== undefined) return cfg.routerId;
+    const v4 = net.l3Ifs(d).filter((i) => net.ifUp(d, i.name)).map((i) => i.ip);
+    if (v4.length) return Math.max(...v4);
+    const v6 = upIfs6.get(d.doc.id)!.flatMap((i) => i.addrs.map((a) => Number(a.ip & 0xffffffffn)));
+    if (v6.length) return Math.max(...v6);
+    const ll = upIfs6.get(d.doc.id)![0]?.ll;
+    return ll === undefined ? 0 : Number(ll & 0xffffffffn);
+  };
+  const routerIds = new Map(ospf6Routers.map((d) => [d.doc.id, rid6(d)]));
+  type Edge6 = { to: string; cost: number; via: L3If6; nextHop: bigint };
+  const edges6 = new Map<string, Edge6[]>();
+  for (const x of ospf6Routers) {
+    const list: Edge6[] = [];
+    const neighbors: Ospf6Neighbor[] = [];
+    const ridX = routerIds.get(x.doc.id)!;
+    for (const a of upIfs6.get(x.doc.id)!) {
+      const area = area6(x, a);
+      if (area === undefined || x.ios!.ospf6!.passive.includes(a.name) || a.name.startsWith('Loopback')) continue;
+      const segment: { dev: RtDevice; iface: L3If6; rid: number }[] = [{ dev: x, iface: a, rid: ridX }];
+      for (const nb of net.broadcastDomain6(x, a.name)) {
+        const y = nb.dev;
+        if (!y.ios?.ospf6 || !y.ios.ipv6Routing || y.ios.ospf6.pid !== x.ios!.ospf6!.pid) continue;
+        const b = nb.iface;
+        if (area6(y, b) !== area || y.ios.ospf6.passive.includes(b.name)) continue;
+        const ridY = routerIds.get(y.doc.id)!;
+        if (ridY === ridX) {
+          net.console(x.doc.id, `%OSPFv3-4-DUP_RTRID_NBR: duplicate router-id ${ipToString(ridX)} from ${ip6ToString(b.ll)} on interface ${a.name}`);
+          continue;
+        }
+        if (segment.some((s) => s.dev === y)) continue;
+        segment.push({ dev: y, iface: b, rid: ridY });
+        list.push({ to: y.doc.id, cost: ospfCost(x, a.name), via: a, nextHop: b.ll });
+      }
+      const p2p = a.name.startsWith('Serial');
+      const sorted = [...segment].sort((m, n) => n.rid - m.rid);
+      const dr = sorted[0]?.rid;
+      const bdr = sorted[1]?.rid;
+      for (const s of segment) {
+        if (s.dev === x) continue;
+        const role = p2p ? '-' : s.rid === dr ? 'DR' : s.rid === bdr ? 'BDR' : 'DROTHER';
+        neighbors.push({ routerId: s.rid, address: s.iface.ll, iface: a.name, peerDevice: s.dev.doc.id, state: p2p ? 'FULL/  -' : `FULL/${role}` });
+      }
+    }
+    edges6.set(x.doc.id, list);
+    res.ospf6Neighbors.set(x.doc.id, neighbors);
+  }
+  const adverts6 = new Map<string, { prefix: bigint; len: number; cost: number }[]>();
+  for (const d of ospf6Routers) {
+    const adverts: { prefix: bigint; len: number; cost: number }[] = [];
+    for (const i of upIfs6.get(d.doc.id)!) {
+      if (area6(d, i) === undefined) continue;
+      for (const a of i.addrs) {
+        const prefix = network6(a.ip, a.len);
+        if (!adverts.some((x) => x.prefix === prefix && x.len === a.len)) adverts.push({ prefix, len: a.len, cost: ospfCost(d, i.name) });
+      }
+      if (i.name.startsWith('Loopback')) {
+        for (const a of i.addrs) adverts.push({ prefix: a.ip, len: 128, cost: 1 });
+      }
+    }
+    adverts6.set(d.doc.id, adverts);
+    res.routes6.set(d.doc.id, []);
+  }
+  for (const x of ospf6Routers) {
+    const dist = new Map<string, number>([[x.doc.id, 0]]);
+    const first = new Map<string, Edge6>();
+    const done = new Set<string>();
+    for (;;) {
+      let u: string | undefined;
+      for (const [k, v] of dist) if (!done.has(k) && (u === undefined || v < dist.get(u)! || (v === dist.get(u)! && k < u))) u = k;
+      if (u === undefined) break;
+      done.add(u);
+      for (const e of edges6.get(u) ?? []) {
+        if (!(edges6.get(e.to) ?? []).some((b) => b.to === u)) continue;
+        const nd = dist.get(u)! + e.cost;
+        if (!dist.has(e.to) || nd < dist.get(e.to)!) {
+          dist.set(e.to, nd);
+          first.set(e.to, u === x.doc.id ? e : first.get(u)!);
+        }
+      }
+    }
+    const own = new Set(upIfs6.get(x.doc.id)!.flatMap((i) => i.addrs.map((a) => `${network6(a.ip, a.len)}/${a.len}`)));
+    const best = new Map<string, Route6>();
+    for (const [y, cost] of dist) {
+      if (y === x.doc.id) continue;
+      const hop = first.get(y)!;
+      for (const ad of adverts6.get(y) ?? []) {
+        const key = `${ad.prefix}/${ad.len}`;
+        if (own.has(key)) continue;
+        const metric = cost + ad.cost;
+        const current = best.get(key);
+        if (!current || metric < (current.metric ?? 0)) best.set(key, { type: 'O', prefix: ad.prefix, len: ad.len, ad: 110, metric, nextHop: hop.nextHop, iface: hop.via.name });
+      }
+    }
+    res.routes6.get(x.doc.id)!.push(...best.values());
   }
   return res;
 }

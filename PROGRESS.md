@@ -1,8 +1,8 @@
 # Avancement — 25 novembre 2026
 
 L'application reste en version `0.1.0`, mais a évolué depuis sa première livraison. Les fondations
-(phase 1), le simulateur fondamental (phase 2) et une partie du simulateur avancé (phase 3)
-fonctionnent. Les phases 4 à 6 sont maintenant **partiellement livrées** : classes et devoirs,
+(phase 1), le simulateur fondamental (phase 2) et le périmètre prévu du simulateur avancé (phase 3)
+sont livrés. Les phases 4 à 6 sont **partiellement livrées** : classes et devoirs,
 éditeur d'exercices, collaboration, examens et tutorat sont présents. Le contenu pédagogique livré
 reste à créer.
 
@@ -13,11 +13,12 @@ correction du conflit d'inscription du compte administrateur partagé.
 
 | Suite | Résultat | Commande |
 | --- | --- | --- |
-| Moteur (Vitest) | 76 tests réussis | `npm test -w @netlab/engine` |
+| Moteur (Vitest) | 80 tests réussis | `npm test -w @netlab/engine` |
+| Web (Vitest) | 3 tests réussis | `npm test -w @netlab/web` |
 | API (Pytest) | 18 tests réussis | `cd apps/api && .venv/bin/python -m pytest -q --timeout 60` |
-| Bout en bout (Playwright, Chromium, 1366×768, fr-FR) | 6/6 tests réussis dans la suite complète | `cd apps/web && npx playwright test` |
-| Typage web | OK | `cd apps/web && npx tsc --noEmit -p .` |
-| Build web | OK | `cd apps/web && npx vite build` |
+| Bout en bout (Playwright, Chromium, 1366×768, fr-FR) | 8/8 tests réussis dans la suite complète | `cd apps/web && npx playwright test` |
+| Typechecks engine + web | OK | `npm run typecheck` |
+| Builds grader + web | OK | `npm run build` |
 | Migration Alembic montée/descendue/remontée (SQLite) | OK | vérification consignée dans le handoff |
 | Migration PostgreSQL 0002 + santé API sur serveur Docker | OK | migration `0002 (head)`, `/api/health` répond `200` |
 
@@ -33,14 +34,15 @@ serveur sont donc ceux de l'environnement de test, pas une instance de productio
   rétablir (50 niveaux), raccourcis clavier, export PNG / SVG / PDF, plein écran.
 - Fenêtre d'équipement : Physique (alimentation, modules), Config (PC : IP ; IOS : import/export de
   configuration texte), CLI, Bureau (Configuration IP, Invite de commandes, Terminal console).
-- Hôtes : configuration IPv4 statique ou DHCP, IPv6 et Wi-Fi. Points d'accès configurables ; les
+- Hôtes : configuration IPv4 statique ou DHCP, IPv6 statique/SLAAC/DHCPv6 et Wi-Fi. Points d'accès configurables ; les
   serveurs proposent DHCP, DNS, TFTP et HTTP(S). Le navigateur intégré est sandboxé.
 - Moteur dans un Web Worker ; sauvegarde automatique IndexedDB ; synchronisation cloud avec
   détection de conflit ; import/export `.netlab`.
-- Modes Temps réel (avance rapide +30 s) et Simulation (PDU ICMP, pas à pas, lecture, vitesse,
-  animation, filtres, inspection OSI et cause de rejet).
-- RIP v1/v2, OSPF, NAT/PAT, DHCP, DNS, TCP minimal, services applicatifs, IPv6 statique et
-  connectivité sans fil ; voir les limites précises dans `COMPATIBILITY.md`.
+- Modes Temps réel (avance rapide +30 s) et Simulation (PDU complexes ICMP/TCP/UDP, pas à pas,
+  lecture, vitesse, animation, filtres, inspection OSI, cause de rejet et export PCAP Ethernet).
+- ACL nommées, RIP v1/v2, OSPFv2/v3, NAT/PAT, DHCP/DHCPv6, DNS, TCP minimal, services applicatifs,
+  IPv6 statique/autoconfigurée et connectivité sans fil ; voir les limites précises dans
+  `COMPATIBILITY.md`.
 - Détails par protocole et par commande : voir `COMPATIBILITY.md`.
 
 ### Serveur
@@ -71,7 +73,8 @@ Voir `ROADMAP.md` pour le plan détaillé. Principaux manques :
 - Fonctions d'identité avancées : vérification/réinitialisation par e-mail, 2FA, OIDC et LTI ;
   interfaces d'administration détaillées.
 - Équipements et protocoles manquants : routeur Wi-Fi domestique, téléphone IP, cloud, modem,
-  pare-feu, IoT, SLAAC/DHCPv6/OSPFv3, ACL nommées, FTP/SMTP/POP3/NTP, export PCAP et PDU complexes.
+  pare-feu, IoT, FTP/SMTP/POP3/NTP ; les fonctions livrées en phase 3 restent des sous-ensembles,
+  voir `COMPATIBILITY.md`.
 
 ## Limitations connues
 - Docker n'est pas installé sur la machine de développement. Les images ont été construites et la
@@ -82,13 +85,17 @@ Voir `ROADMAP.md` pour le plan détaillé. Principaux manques :
 - Le serveur est actuellement servi en HTTP sur le réseau local, sans TLS. Ne pas l'exposer à
   Internet avant d'ajouter un terminateur TLS et de configurer `NETLAB_COOKIE_SECURE=true`.
 - Limitation de débit en mémoire de processus (une seule instance d'API) ; Redis prévu.
-- Les protocoles RIP/OSPF représentent l'état convergé calculé : pas de paquets de routage ni de
-  délai de convergence simulé. OSPFv3, SLAAC et DHCPv6 ne sont pas pris en charge.
+- RIP et OSPFv2/v3 représentent l'état convergé calculé : pas de paquets de routage ni de délai de
+  convergence simulé. OSPFv3 ne prend en charge qu'un processus par routeur. DHCPv6 attribue un
+  préfixe, mais le client n'utilise pas encore l'option DNS ; voir `COMPATIBILITY.md`.
+- L'export PCAP est au format classique 2.4/Ethernet, préserve les tags 802.1Q et ne capture que les
+  trames émises ; HDLC série n'est pas exporté.
 - La collaboration conserve ses salons et son journal en mémoire du processus ; ce n'est pas un
   service partagé entre plusieurs instances d'API. Le fonctionnement de l'horloge collaborative
   doit encore être confirmé dans l'interface.
 - La suite Playwright complète passe avec le compte administrateur partagé : inscription lors de la
-  première spec, connexion si le compte existe déjà.
+  première spec, connexion si le compte existe déjà. Les tests de la suite peuvent partager la base
+  temporaire de l'exécution.
 - Copier/coller entre projets non pris en charge ; pas de groupes d'équipements (zones uniquement).
 - La CLI ne gère pas le déplacement du curseur dans la ligne ni `Ctrl+A/E`.
 - STP et CDP sont calculés (pas de BPDU/annonces simulés) ; le compteur « type 5 » n'est pas MD5-crypt.

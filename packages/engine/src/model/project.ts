@@ -79,7 +79,7 @@ export function validateServices(v: Json): ServicesDoc {
 }
 
 export function defaultHostConfig(): HostConfig {
-  return { ipMode: 'static', ip: '', mask: '', gateway: '', dns: '', portUp: true };
+  return { ipMode: 'static', ip: '', mask: '', gateway: '', dns: '', portUp: true, ipv6Mode: 'static' };
 }
 
 /** Adds a device and returns it. The display name follows Packet Tracer's "<Prefix><n>" scheme. */
@@ -246,6 +246,9 @@ export function validateProject(input: Json): ProjectDoc {
       }
     } else if (spec.kind === 'host') {
       const h = isObj(raw.host) ? raw.host : {};
+      if (h.ipv6Mode !== undefined && !['static', 'slaac', 'dhcpv6'].includes(String(h.ipv6Mode))) {
+        throw new ModelError('invalid', 'Invalid IPv6 configuration mode');
+      }
       d.host = {
         ipMode: h.ipMode === 'dhcp' ? 'dhcp' : 'static',
         ip: str(h.ip ?? '', 15, 'ip'),
@@ -255,6 +258,7 @@ export function validateProject(input: Json): ProjectDoc {
         portUp: h.portUp !== false,
         ...(h.ipv6 ? { ipv6: str(h.ipv6, 50, 'ipv6') } : {}),
         ...(h.ipv6Gateway ? { ipv6Gateway: str(h.ipv6Gateway, 45, 'ipv6 gateway') } : {}),
+        ipv6Mode: h.ipv6Mode === 'slaac' || h.ipv6Mode === 'dhcpv6' ? h.ipv6Mode : 'static',
         ...(isObj(h.wifi) ? { wifi: { ssid: str(h.wifi.ssid ?? '', 32, 'ssid'), key: str(h.wifi.key ?? '', 63, 'wifi key') } } : {}),
       };
       if (spec.role === 'server') d.services = validateServices(raw.services);

@@ -46,3 +46,12 @@ Ces changements sont présents dans l'arbre de travail, sans numéro de version 
   configuration des points d'accès et navigateur sandboxé.
 - Playwright démarre l'API sur SQLite temporaire en plus de Vite. Après correction de l'inscription
   concurrente du compte administrateur partagé, la suite complète passe (6/6).
+
+### Finalisation de la phase 3 — 25 novembre 2026
+- ACL standard et étendues nommées, SLAAC, DHCPv6 stateful et OSPFv3 calculé (un processus par routeur).
+- PDU complexes configurables (ICMP/TCP/UDP) et export PCAP 2.4 Ethernet des trames émises, tags 802.1Q inclus.
+- CLI hôte `ipv6config /renew`, configuration IPv6 automatique dans l'interface, vues DHCPv6/OSPFv3
+  et persistance IOS testée.
+- Couverture moteur mise à jour à 80 tests ; typechecks, builds, tests web et Playwright revérifiés.
+- Limites : routage calculé à l'état convergé sans paquets de contrôle/délai, options DNS DHCPv6 non
+  consommées par le client, capture PCAP sans trames série HDLC.

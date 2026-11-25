@@ -35,7 +35,7 @@ export function HostIpForm({ project, dev }: { project: string; dev: DeviceView 
   const toast = useUi((s) => s.toast);
   const [f, setF] = useState<HostConfig>(dev.host!);
   const h = dev.host!;
-  useEffect(() => setF(structuredClone(dev.host!)), [dev.id, h.ip, h.mask, h.gateway, h.dns, h.portUp, h.ipMode, h.ipv6, h.ipv6Gateway, h.wifi?.ssid, h.wifi?.key]);
+  useEffect(() => setF(structuredClone(dev.host!)), [dev.id, h.ip, h.mask, h.gateway, h.dns, h.portUp, h.ipMode, h.ipv6, h.ipv6Gateway, h.ipv6Mode, h.wifi?.ssid, h.wifi?.key]);
   const wireless = dev.ports.some((p) => p.media === 'wireless');
   const input = 'rounded border border-line bg-panel2 px-2 py-1 font-mono outline-none focus:border-accent disabled:opacity-50';
   const field = (k: 'ip' | 'mask' | 'gateway' | 'dns' | 'ipv6' | 'ipv6Gateway', label: string, disabled = false) => (
@@ -48,19 +48,26 @@ export function HostIpForm({ project, dev }: { project: string; dev: DeviceView 
     </label>
   );
   const dhcp = f.ipMode === 'dhcp';
+  const ipv6Mode = f.ipv6Mode ?? 'static';
+  const ipv6Auto = ipv6Mode !== 'static';
   return (
     <form
       className="flex flex-col gap-2"
       onSubmit={(e) => {
         e.preventDefault();
-        const base = { portUp: f.portUp, ipv6: f.ipv6 ?? '', ipv6Gateway: f.ipv6Gateway ?? '', ...(wireless ? { wifi: f.wifi ?? { ssid: '', key: '' } } : {}) };
+        const base = { portUp: f.portUp, ipv6: f.ipv6 ?? '', ipv6Gateway: f.ipv6Gateway ?? '', ipv6Mode, ...(wireless ? { wifi: f.wifi ?? { ssid: '', key: '' } } : {}) };
         const cfg = dhcp ? { ...base, ipMode: 'dhcp' as const } : { ...base, ipMode: 'static' as const, ip: f.ip, mask: f.mask || (f.ip ? classful(f.ip) : ''), gateway: f.gateway, dns: f.dns };
-        void sim.op(project, 'setHostConfig', dev.id, cfg).then(async () => {
+        void (async () => {
+          await sim.op(project, 'setHostConfig', dev.id, cfg);
           if (dhcp) {
             const r = await sim.op<{ ok: boolean; ip?: string }>(project, 'dhcpRenew', dev.id);
             toast(r.ok ? t('host.dhcpOk', { ip: r.ip ?? '' }) : t('host.dhcpFail'), r.ok ? 'info' : 'error');
-          } else toast(t('win.applied'));
-        }, fail);
+          }
+          if (ipv6Auto) {
+            const r = await sim.op<{ ok: boolean; ipv6?: string }>(project, 'ipv6Renew', dev.id);
+            toast(r.ok ? t('host.ipv6Ok', { ip: r.ipv6 ?? '' }) : t('host.ipv6Fail'), r.ok ? 'info' : 'error');
+          } else if (!dhcp) toast(t('win.applied'));
+        })().catch(fail);
       }}
     >
       <fieldset className="flex gap-4 text-[12px]">
@@ -75,8 +82,16 @@ export function HostIpForm({ project, dev }: { project: string; dev: DeviceView 
       {field('mask', t('host.mask'), dhcp)}
       {field('gateway', t('host.gateway'), dhcp)}
       {field('dns', t('host.dns'), dhcp)}
-      {field('ipv6', t('host.ipv6'))}
-      {field('ipv6Gateway', t('host.ipv6gw'))}
+      <label className="flex flex-col gap-0.5 text-[12px]">
+        <span className="text-muted">{t('host.ipv6Mode')}</span>
+        <select className={input} value={ipv6Mode} onChange={(e) => setF({ ...f, ipv6Mode: e.target.value as HostConfig['ipv6Mode'], ...(e.target.value === 'static' ? {} : { ipv6: '', ipv6Gateway: '' }) })}>
+          <option value="static">{t('host.static')}</option>
+          <option value="slaac">SLAAC</option>
+          <option value="dhcpv6">DHCPv6</option>
+        </select>
+      </label>
+      {field('ipv6', t('host.ipv6'), ipv6Auto)}
+      {field('ipv6Gateway', t('host.ipv6gw'), ipv6Auto)}
       {wireless && (
         <>
           <label className="flex flex-col gap-0.5 text-[12px]"><span className="text-muted">{t('host.ssid')}</span>
@@ -89,7 +104,7 @@ export function HostIpForm({ project, dev }: { project: string; dev: DeviceView 
         <input type="checkbox" checked={f.portUp} onChange={(e) => setF({ ...f, portUp: e.target.checked })} />
         {t('host.port')}
       </label>
-      <button className="self-start rounded bg-accent px-3 py-1 text-white hover:brightness-110">{dhcp ? t('host.renew') : t('win.apply')}</button>
+      <button className="self-start rounded bg-accent px-3 py-1 text-white hover:brightness-110">{dhcp || ipv6Auto ? t('host.renew') : t('win.apply')}</button>
     </form>
   );
 }

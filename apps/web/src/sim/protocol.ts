@@ -54,6 +54,9 @@ export interface PduView {
   id: number;
   src: string;
   dst: string;
+  protocol: 'icmp' | 'tcp' | 'udp';
+  srcPort?: number;
+  dstPort?: number;
   status: 'in-progress' | 'successful' | 'failed';
 }
 
@@ -84,7 +87,8 @@ export type OpName =
   | 'importConfig'
   | 'setServices'
   | 'setWireless'
-  | 'dhcpRenew';
+  | 'dhcpRenew'
+  | 'ipv6Renew';
 
 export type Request =
   | { method: 'open'; project: string; doc: ProjectDoc }
@@ -100,7 +104,7 @@ export type Request =
   | { method: 'tick'; project: string; ms: number }
   | { method: 'simStep'; project: string }
   | { method: 'simReset'; project: string }
-  | { method: 'simPdu'; project: string; src: string; dst: string };
+  | { method: 'simPdu'; project: string; src: string; dst: string; protocol?: 'icmp' | 'tcp' | 'udp'; dstPort?: number };
 
 export type WorkerMessage =
   | { type: 'reply'; id: number; ok: true; value: unknown }

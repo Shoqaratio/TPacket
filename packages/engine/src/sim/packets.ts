@@ -43,6 +43,15 @@ export interface DhcpMsg {
   dns?: number;
 }
 
+export interface Dhcp6Msg {
+  op: 'SOLICIT' | 'ADVERTISE' | 'REQUEST' | 'REPLY';
+  xid: number;
+  clientMac: string;
+  address?: bigint;
+  prefix?: { network: bigint; len: number };
+  dns?: bigint;
+}
+
 export interface DnsMsg {
   id: number;
   qname: string;
@@ -61,6 +70,7 @@ export interface TftpMsg {
 /** Application payloads carried by UDP/TCP. */
 export type AppData =
   | { app: 'dhcp'; dhcp: DhcpMsg }
+  | { app: 'dhcp6'; dhcp6: Dhcp6Msg }
   | { app: 'dns'; dns: DnsMsg }
   | { app: 'tftp'; tftp: TftpMsg }
   | { app: 'http'; method?: string; path?: string; status?: number; body?: string; secure?: boolean }
@@ -96,12 +106,13 @@ export interface Ipv4Pkt {
   tcp?: TcpSeg;
 }
 
-/** IPv6 datagram (ICMPv6 only: echo, errors and Neighbor Discovery). */
+/** IPv6 datagram (ICMPv6 and UDP for DHCPv6). */
 export interface Ipv6Pkt {
   src: bigint;
   dst: bigint;
   hop: number;
-  icmp6: { type: number; code: number; ident?: number; seq?: number; target?: bigint; lladdr?: string; quote?: { ident?: number; seq?: number } };
+  icmp6?: { type: number; code: number; ident?: number; seq?: number; target?: bigint; lladdr?: string; quote?: { ident?: number; seq?: number }; prefix?: { network: bigint; len: number }; managed?: boolean };
+  udp?: UdpPkt;
 }
 
 export interface Frame {
@@ -124,8 +135,11 @@ const APP_PORTS: Record<number, string> = { 67: 'DHCP', 68: 'DHCP', 53: 'DNS', 6
 export function protoOf(f: Frame): string {
   if (f.type === 'arp') return 'ARP';
   if (f.type === 'ipv6') {
-    const t = f.ip6!.icmp6.type;
-    return t === 135 || t === 136 ? 'NDP' : 'ICMPv6';
+    const p = f.ip6!;
+    if (p.udp) return p.udp.data?.app === 'dhcp6' ? 'DHCPv6' : 'UDPv6';
+    if (!p.icmp6) return 'IPv6';
+    const t = p.icmp6.type;
+    return t === 135 || t === 136 || t === 133 || t === 134 ? 'NDP' : 'ICMPv6';
   }
   const p = f.ip!;
   if (p.proto === 'icmp') return 'ICMP';
@@ -150,6 +164,8 @@ export function describeFrame(f: Frame): string {
   }
   if (f.type === 'ipv6') {
     const p = f.ip6!;
+    if (p.udp) return `UDPv6 ${p.udp.sport} > ${p.udp.dport}${p.udp.data?.app === 'dhcp6' ? ` DHCPv6 ${p.udp.data.dhcp6.op}` : ''} ${ip6ToString(p.src)} > ${ip6ToString(p.dst)} HL=${p.hop}`;
+    if (!p.icmp6) return `IPv6 ${ip6ToString(p.src)} > ${ip6ToString(p.dst)} HL=${p.hop}`;
     const t = ICMP6_TYPES[p.icmp6.type] ?? `type ${p.icmp6.type}`;
     return `ICMPv6 ${t}${p.icmp6.target !== undefined ? ` ${ip6ToString(p.icmp6.target)}` : ''} ${ip6ToString(p.src)} > ${ip6ToString(p.dst)} HL=${p.hop}`;
   }

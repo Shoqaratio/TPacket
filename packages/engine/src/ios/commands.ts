@@ -2,7 +2,7 @@ import type { DeviceKind } from '../model/types';
 import { ipToString, isUsableHost, maskToPrefix, networkOf, parseIp } from '../net/ipv4';
 import type { EchoOutcome } from '../sim/network';
 import { saltFrom, type5Hash, type7Decode } from '../util/secrets';
-import { type AclEntry, type AclProto, newInterface, parseVlanList, type SwitchportMode } from './config';
+import { type AclEntry, type AclProto, newInterface, parseVlanList, type AclType, type SwitchportMode } from './config';
 import { replay } from './load';
 import { type Args, def, newTree, readIface, tokenize, type Tree } from './parser';
 import type { Ctx, Mode } from './session';
@@ -270,6 +270,8 @@ function build(kind: DeviceKind): Record<Mode, T> {
   const vlan = newTree<Ctx>();
   const router = newTree<Ctx>();
   const dhcp = newTree<Ctx>();
+  const dhcp6 = newTree<Ctx>();
+  const acl = newTree<Ctx>();
 
   // ---------------------------------------------------------------- EXEC (user + privileged)
   for (const t of [user, priv]) {
@@ -518,7 +520,35 @@ function build(kind: DeviceKind): Record<Mode, T> {
   // Access lists
   def(config, 'access-list <1-99> <line>', (c, a) => addAce(c, a), ['', 'IP standard access list', 'permit | deny  source [wildcard] | host source | any']);
   def(config, 'access-list <100-199> <line>', (c, a) => addAce(c, a), ['', 'IP extended access list', 'permit | deny  protocol source destination [eq port]']);
-  def(config, 'no access-list <1-199>', (c, a) => c.c.acls.delete(a.p[0]!));
+  def(config, 'no access-list <1-199>', (c, a) => {
+    c.c.acls.delete(a.p[0]!);
+    c.c.aclTypes.delete(a.p[0]!);
+  });
+  const enterAcl = (type: AclType) => (c: Ctx, a: Args) => {
+    const name = a.p[0]!.slice(0, 64);
+    if (/^\d+$/.test(name)) return c.out('% Named access list name cannot be a number');
+    const existing = c.c.aclTypes.get(name);
+    if (existing && existing !== type) return c.out('% Cannot change the type of an existing access list');
+    c.c.aclTypes.set(name, type);
+    c.c.acls.set(name, c.c.acls.get(name) ?? []);
+    c.s.aclTarget = name;
+    c.s.mode = 'config-acl';
+  };
+  def(config, 'ip access-list standard <WORD>', enterAcl('standard'));
+  def(config, 'ip access-list extended <WORD>', enterAcl('extended'));
+  def(config, 'no ip access-list standard <WORD>', (c, a) => {
+    c.c.acls.delete(a.p[0]!);
+    c.c.aclTypes.delete(a.p[0]!);
+  });
+  def(config, 'no ip access-list extended <WORD>', (c, a) => {
+    c.c.acls.delete(a.p[0]!);
+    c.c.aclTypes.delete(a.p[0]!);
+  });
+  for (const action of ['permit', 'deny'] as const) {
+    def(acl, `${action} <line>`, (c, a) => addNamedAce(c, action, a.p[0]!));
+    def(acl, `no ${action} <line>`, (c, a) => removeNamedAce(c, action, a.p[0]!));
+  }
+  def(acl, 'exit', (c) => (c.s.mode = 'config'));
 
   // Lines
   def(config, 'line console 0', (c) => {
@@ -572,11 +602,11 @@ function build(kind: DeviceKind): Record<Mode, T> {
     def(t, 'no ip address <ip> <ip>', (c) => targets(c).forEach((i) => delete i.ip));
     def(t, 'ip helper-address <ip>', (c, a) => targets(c).forEach((i) => { const h = parseIp(a.p[0]!)!; if (!i.helpers.includes(h)) i.helpers.push(h); }), ['', '', '', 'IP destination address']);
     def(t, 'no ip helper-address <ip>', (c, a) => targets(c).forEach((i) => (i.helpers = i.helpers.filter((h) => h !== parseIp(a.p[0]!)))));
-    def(t, 'ip access-group <1-199> in', (c, a) => targets(c).forEach((i) => (i.aclIn = a.p[0]!)), ['', '', '', 'IP access list (standard or extended)']);
-    def(t, 'ip access-group <1-199> out', (c, a) => targets(c).forEach((i) => (i.aclOut = a.p[0]!)));
-    def(t, 'no ip access-group <1-199> in', (c) => targets(c).forEach((i) => delete i.aclIn));
-    def(t, 'no ip access-group <1-199> out', (c) => targets(c).forEach((i) => delete i.aclOut));
-    def(t, 'no ip access-group <1-199>', (c) => targets(c).forEach((i) => { delete i.aclIn; delete i.aclOut; }));
+    def(t, 'ip access-group <WORD> in', (c, a) => targets(c).forEach((i) => (i.aclIn = a.p[0]!)), ['', '', '', 'IP access list (standard or extended)']);
+    def(t, 'ip access-group <WORD> out', (c, a) => targets(c).forEach((i) => (i.aclOut = a.p[0]!)));
+    def(t, 'no ip access-group <WORD> in', (c) => targets(c).forEach((i) => delete i.aclIn));
+    def(t, 'no ip access-group <WORD> out', (c) => targets(c).forEach((i) => delete i.aclOut));
+    def(t, 'no ip access-group <WORD>', (c) => targets(c).forEach((i) => { delete i.aclIn; delete i.aclOut; }));
     def(t, 'ip proxy-arp', (c) => targets(c).forEach((i) => (i.proxyArp = true)));
     def(t, 'no ip proxy-arp', (c) => targets(c).forEach((i) => (i.proxyArp = false)));
     def(t, 'speed <line>', (c, a) => {
@@ -728,11 +758,13 @@ function build(kind: DeviceKind): Record<Mode, T> {
     }
   });
 
-  defineL3({ user, priv, config, cif, router, dhcp, canonicalIf, targets }, kind);
+  defineL3({ user, priv, config, cif, router, dhcp, dhcp6, canonicalIf, targets }, kind);
 
   return {
     'config-router': router,
     'config-dhcp': dhcp,
+    'config-dhcp6': dhcp6,
+    'config-acl': acl,
     user,
     priv,
     config,
@@ -870,5 +902,29 @@ function addAce(c: Ctx, a: Args): void {
   const list = c.c.acls.get(String(num)) ?? [];
   list.push(e);
   c.c.acls.set(String(num), list);
+  c.c.aclTypes.set(String(num), num <= 99 ? 'standard' : 'extended');
+}
+
+function addNamedAce(c: Ctx, action: 'permit' | 'deny', text: string): void {
+  const name = c.s.aclTarget;
+  const type = c.c.aclTypes.get(name);
+  if (!type) return c.out('% No access list is active');
+  const e = parseAce(type === 'standard' ? 1 : 100, `${action} ${text}`);
+  if (typeof e === 'string') return c.invalid(1);
+  c.c.acls.get(name)!.push(e);
+}
+
+function removeNamedAce(c: Ctx, action: 'permit' | 'deny', text: string): void {
+  const name = c.s.aclTarget;
+  const type = c.c.aclTypes.get(name);
+  if (!type) return c.out('% No access list is active');
+  const target = parseAce(type === 'standard' ? 1 : 100, `${action} ${text}`);
+  if (typeof target === 'string') return c.invalid(2);
+  const entries = c.c.acls.get(name)!;
+  const index = entries.findIndex((e) => e.action === target.action && e.proto === target.proto
+  && e.src.ip === target.src.ip && e.src.wildcard === target.src.wildcard
+  && e.dst?.ip === target.dst?.ip && e.dst?.wildcard === target.dst?.wildcard
+  && e.dstPort === target.dstPort);
+  if (index >= 0) entries.splice(index, 1);
 }
 

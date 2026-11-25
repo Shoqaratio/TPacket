@@ -280,10 +280,18 @@ export function showSpanningTree(net: Network, d: RtDevice): string {
 
 export function showAccessLists(d: RtDevice): string {
   const L: string[] = [];
-  for (const [name, entries] of [...d.ios!.acls].sort((a, b) => Number(a[0]) - Number(b[0]))) {
-    const n = Number(name);
-    L.push(`${n >= 1 && n <= 99 ? 'Standard' : 'Extended'} IP access list ${name}`);
-    entries.forEach((e, k) => L.push(`    ${(k + 1) * 10}${aclEntryText(name, e, false)}${e.matches ? ` (${e.matches} match(es))` : ''}`));
+  const lists = [...d.ios!.acls].sort(([a], [b]) => {
+    const an = Number(a);
+    const bn = Number(b);
+    if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+    if (Number.isFinite(an)) return -1;
+    if (Number.isFinite(bn)) return 1;
+    return a.localeCompare(b);
+  });
+  for (const [name, entries] of lists) {
+    const type = d.ios!.aclTypes.get(name) ?? (Number(name) <= 99 ? 'standard' : 'extended');
+    L.push(`${type === 'standard' ? 'Standard' : 'Extended'} IP access list ${name}`);
+    entries.forEach((e, k) => L.push(`    ${(k + 1) * 10}${aclEntryText(name, e, false, type)}${e.matches ? ` (${e.matches} match(es))` : ''}`));
   }
   return L.join('\n');
 }
@@ -375,10 +383,26 @@ export function showIpv6Brief(net: Network, d: RtDevice): string {
 }
 
 export function showIpv6Route(net: Network, d: RtDevice): string {
-  const L = ['IPv6 Routing Table - default - ' + net.routes6(d).length + ' entries', 'Codes: C - Connected, L - Local, S - Static', ''];
+  const L = ['IPv6 Routing Table - default - ' + net.routes6(d).length + ' entries', 'Codes: C - Connected, L - Local, S - Static, O - OSPFv3', ''];
   for (const r of net.routes6(d)) {
-    L.push(`${r.type}   ${ip6ToString(r.prefix)}/${r.len} [${r.ad}/0]`);
+    L.push(`${r.type}   ${ip6ToString(r.prefix)}/${r.len} [${r.ad}/${r.metric ?? 0}]`);
     L.push(r.nextHop !== undefined ? `     via ${ip6ToString(r.nextHop)}${r.iface ? `, ${r.iface}` : ''}` : `     via ${r.iface}, ${r.type === 'L' ? 'receive' : 'directly connected'}`);
   }
   return L.join('\n');
+}
+
+export function showOspf6Neighbors(net: Network, d: RtDevice): string {
+  if (!d.ios?.ospf6) return '';
+  const L = ['', 'Neighbor ID     Pri   State           Dead Time   Address                         Interface'];
+  for (const n of net.dynamic().ospf6Neighbors.get(d.doc.id) ?? []) {
+    L.push(`${pad(ipToString(n.routerId), 16)}${pad('1', 6)}${pad(n.state, 16)}00:00:30    ${pad(ip6ToString(n.address), 32)}${n.iface}`);
+  }
+  return L.join('\n');
+}
+
+export function showDhcp6Binding(d: RtDevice): string {
+  const rows = [...d.dhcp6Bindings].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+  return rows.length
+    ? ['Client: DUID (simulated)       IPv6 address', ...rows.map(([ip, lease]) => `${macCisco(lease.mac).padEnd(28)}${ip6ToString(ip)}`)].join('\n')
+    : 'No DHCPv6 bindings.';
 }

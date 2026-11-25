@@ -17,6 +17,7 @@ export interface L3Trees {
   cif: T;
   router: T;
   dhcp: T;
+  dhcp6: T;
   canonicalIf(c: Ctx, name: string): string | null;
   targets(c: Ctx): ReturnType<Ctx['c']['interfaces']['get']>[];
 }
@@ -27,7 +28,7 @@ function rip(c: Ctx) {
 
 export function defineL3(t: L3Trees, kind: DeviceKind): void {
   const routing = kind === 'router' || kind === 'l3switch';
-  const { config, cif, router, dhcp, priv, user } = t;
+  const { config, cif, router, dhcp, dhcp6, priv, user } = t;
 
   if (routing) {
     // ------------------------------------------------------------------ RIP / OSPF
@@ -45,9 +46,21 @@ export function defineL3(t: L3Trees, kind: DeviceKind): void {
       c.s.mode = 'config-router';
     }, ['', 'Open Shortest Path First (OSPF)', 'Process ID']);
     def(config, 'no router ospf <1-65535>', (c) => delete c.c.ospf);
+    def(config, 'ipv6 router ospf <1-65535>', (c, a) => {
+      const pid = Number(a.p[0]);
+      if (c.c.ospf6 && c.c.ospf6.pid !== pid) return c.out('% TPacket supports a single OSPFv3 process per router');
+      c.c.ospf6 ??= { pid, passive: [] };
+      c.s.routerTarget = 'ospf6';
+      c.s.mode = 'config-router';
+    }, ['', '', 'Configure OSPFv3 routing process', 'Process ID']);
+    def(config, 'no ipv6 router ospf <1-65535>', (c) => {
+      delete c.c.ospf6;
+      for (const i of c.c.interfaces.values()) delete i.ospf6;
+    });
 
     const onlyRip = (fn: (c: Ctx, a: Args) => void) => (c: Ctx, a: Args) => (c.s.routerTarget === 'rip' ? fn(c, a) : c.invalid(0));
     const onlyOspf = (fn: (c: Ctx, a: Args) => void) => (c: Ctx, a: Args) => (c.s.routerTarget === 'ospf' ? fn(c, a) : c.invalid(0));
+    const onlyOspf6 = (fn: (c: Ctx, a: Args) => void) => (c: Ctx, a: Args) => (c.s.routerTarget === 'ospf6' ? fn(c, a) : c.invalid(0));
     def(router, 'version <1-2>', onlyRip((c, a) => (rip(c).version = Number(a.p[0]) as 1 | 2)), ['Set routing protocol version', 'version']);
     def(router, 'no version', onlyRip((c) => delete rip(c).version));
     def(router, 'auto-summary', onlyRip((c) => (rip(c).autoSummary = true)), ['Enable automatic network number summarization']);
@@ -79,15 +92,22 @@ export function defineL3(t: L3Trees, kind: DeviceKind): void {
       const wildcard = parseIp(a.p[1]!)!;
       c.c.ospf!.networks = c.c.ospf!.networks.filter((n) => !(n.ip === ((ip & ~wildcard) >>> 0) && n.wildcard === wildcard));
     }));
-    def(router, 'router-id <ip>', onlyOspf((c, a) => {
-      c.c.ospf!.routerId = parseIp(a.p[0]!)!;
-      if (!c.s.opts.replay) c.out('Reload or use "clear ip ospf process" command, for this to take effect');
-    }), ['router-id for this OSPF process', 'OSPF router-id in IP address format']);
-    def(router, 'no router-id', onlyOspf((c) => delete c.c.ospf!.routerId));
+    def(router, 'router-id <ip>', (c, a) => {
+      if (c.s.routerTarget === 'ospf') {
+        c.c.ospf!.routerId = parseIp(a.p[0]!)!;
+        if (!c.s.opts.replay) c.out('Reload or use "clear ip ospf process" command, for this to take effect');
+      } else if (c.s.routerTarget === 'ospf6') c.c.ospf6!.routerId = parseIp(a.p[0]!)!;
+      else c.invalid(0);
+    }, ['router-id for this OSPF process', 'OSPF router-id in IP address format']);
+    def(router, 'no router-id', (c) => {
+      if (c.s.routerTarget === 'ospf') delete c.c.ospf!.routerId;
+      else if (c.s.routerTarget === 'ospf6') delete c.c.ospf6!.routerId;
+      else c.invalid(0);
+    });
     const passive = (on: boolean) => (c: Ctx, a: Args) => {
       const n = t.canonicalIf(c, a.p[0]!);
       if (!n || !c.c.interfaces.has(n)) return c.out('%Invalid interface type and number');
-      const list = c.s.routerTarget === 'rip' ? rip(c).passive : c.c.ospf!.passive;
+      const list = c.s.routerTarget === 'rip' ? rip(c).passive : c.s.routerTarget === 'ospf' ? c.c.ospf!.passive : c.c.ospf6!.passive;
       const i = list.indexOf(n);
       if (on && i < 0) list.push(n);
       if (!on && i >= 0) list.splice(i, 1);
@@ -96,11 +116,13 @@ export function defineL3(t: L3Trees, kind: DeviceKind): void {
     def(router, 'no passive-interface <iface>', passive(false));
     def(router, 'default-information originate', (c) => {
       if (c.s.routerTarget === 'rip') rip(c).defaultOriginate = true;
-      else c.c.ospf!.defaultOriginate = true;
+      else if (c.s.routerTarget === 'ospf') c.c.ospf!.defaultOriginate = true;
+      else c.invalid(0);
     }, ['Control distribution of default information', 'Distribute a default route']);
     def(router, 'no default-information originate', (c) => {
       if (c.s.routerTarget === 'rip') rip(c).defaultOriginate = false;
-      else c.c.ospf!.defaultOriginate = false;
+      else if (c.s.routerTarget === 'ospf') c.c.ospf!.defaultOriginate = false;
+      else c.invalid(0);
     });
     def(router, 'exit', (c) => (c.s.mode = 'config'));
 
@@ -177,6 +199,43 @@ export function defineL3(t: L3Trees, kind: DeviceKind): void {
   if (routing) {
     def(config, 'ipv6 unicast-routing', (c) => (c.c.ipv6Routing = true), ['IPv6 configuration commands', 'Enable unicast routing']);
     def(config, 'no ipv6 unicast-routing', (c) => (c.c.ipv6Routing = false));
+    def(cif, 'ipv6 ospf <1-65535> area <0-4294967295>', (c, a) => {
+      const pid = Number(a.p[0]);
+      const area = Number(a.p[1]);
+      if (c.c.ospf6 && c.c.ospf6.pid !== pid) return c.out('% TPacket supports a single OSPFv3 process per router');
+      c.c.ospf6 ??= { pid, passive: [] };
+      t.targets(c).forEach((i) => (i!.ospf6 = { pid, area }));
+    });
+    def(cif, 'no ipv6 ospf <1-65535> area <0-4294967295>', (c, a) => {
+      const pid = Number(a.p[0]);
+      t.targets(c).forEach((i) => {
+        const ospf6 = i?.ospf6;
+        if (ospf6?.pid === pid && ospf6.area === Number(a.p[1])) delete i!.ospf6;
+      });
+    });
+    def(config, 'ipv6 dhcp pool <WORD>', (c, a) => {
+      const name = a.p[0]!.slice(0, 64);
+      if (!c.c.dhcp6Pools.has(name)) c.c.dhcp6Pools.set(name, { name });
+      c.s.dhcp6Target = name;
+      c.s.mode = 'config-dhcp6';
+    }, ['', '', 'Configure DHCPv6 server', 'Pool name']);
+    def(config, 'no ipv6 dhcp pool <WORD>', (c, a) => {
+      c.c.dhcp6Pools.delete(a.p[0]!);
+      for (const i of c.c.interfaces.values()) if (i.dhcp6Pool === a.p[0]) delete i.dhcp6Pool;
+    });
+    def(dhcp6, 'address prefix <WORD>', (c, a) => {
+      const prefix = parseCidr6(a.p[0]!);
+      if (!prefix) return c.invalid(2);
+      c.c.dhcp6Pools.get(c.s.dhcp6Target)!.prefix = { network: network6(prefix.ip, prefix.len), len: prefix.len };
+    });
+    def(dhcp6, 'dns-server <WORD>', (c, a) => {
+      const dns = parseIp6(a.p[0]!);
+      if (dns === null) return c.invalid(1);
+      c.c.dhcp6Pools.get(c.s.dhcp6Target)!.dns = dns;
+    });
+    def(dhcp6, 'no address prefix', (c) => delete c.c.dhcp6Pools.get(c.s.dhcp6Target)!.prefix);
+    def(dhcp6, 'no dns-server', (c) => delete c.c.dhcp6Pools.get(c.s.dhcp6Target)!.dns);
+    def(dhcp6, 'exit', (c) => (c.s.mode = 'config'));
     const route6 = (c: Ctx, a: Args, distance: number) => {
       const pfx = parseCidr6(a.p[0]!);
       if (!pfx) return c.invalid(2);
@@ -211,6 +270,15 @@ export function defineL3(t: L3Trees, kind: DeviceKind): void {
   });
   def(cif, 'ipv6 enable', (c) => t.targets(c).forEach((i) => (i!.ipv6Enable = true)), ['', 'Enable IPv6 on interface']);
   def(cif, 'no ipv6 enable', (c) => t.targets(c).forEach((i) => (i!.ipv6Enable = false)));
+  if (routing) {
+    def(cif, 'ipv6 nd managed-config-flag', (c) => t.targets(c).forEach((i) => (i!.ipv6Managed = true)));
+    def(cif, 'no ipv6 nd managed-config-flag', (c) => t.targets(c).forEach((i) => (i!.ipv6Managed = false)));
+    def(cif, 'ipv6 dhcp server <WORD>', (c, a) => {
+      if (!c.c.dhcp6Pools.has(a.p[0]!)) return c.out('% DHCPv6 pool does not exist');
+      t.targets(c).forEach((i) => (i!.dhcp6Pool = a.p[0]!));
+    });
+    def(cif, 'no ipv6 dhcp server', (c) => t.targets(c).forEach((i) => delete i!.dhcp6Pool));
+  }
 
   // ------------------------------------------------------------------ show / copy
   for (const tr of [user, priv]) {
@@ -220,6 +288,8 @@ export function defineL3(t: L3Trees, kind: DeviceKind): void {
       def(tr, 'show ip protocols', (c) => c.out(show.showIpProtocols(c.net, c.d)), ['', '', 'IP routing protocol process parameters and statistics']);
       def(tr, 'show ip ospf neighbor', (c) => c.out(show.showOspfNeighbors(c.net, c.d)), ['', '', 'OSPF information', 'Neighbor list']);
       def(tr, 'show ip dhcp binding', (c) => c.out(show.showDhcpBinding(c.d)), ['', '', 'Show items in the DHCP database', 'DHCP address bindings']);
+      def(tr, 'show ipv6 dhcp binding', (c) => c.out(show.showDhcp6Binding(c.d)));
+      def(tr, 'show ipv6 ospf neighbor', (c) => c.out(show.showOspf6Neighbors(c.net, c.d)));
       def(tr, 'show ip nat translations', (c) => c.out(showNat(c.d)), ['', '', 'IP NAT information', 'Translation entries']);
     }
   }

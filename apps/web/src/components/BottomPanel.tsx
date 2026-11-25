@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { ICMP_TYPES, ipToString, macCisco, type SimEvent } from '@netlab/engine';
+import { ICMP_TYPES, ip6ToString, ipToString, macCisco, type SimEvent } from '@netlab/engine';
 import { X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useT } from '../i18n';
@@ -8,13 +8,16 @@ import { useUi } from '../store';
 import { Terminal } from './Terminal';
 import { TutorPanel } from './TutorPanel';
 import { CollabPanel } from './CollabPanel';
+import { downloadFile } from '../projects';
+import { encodePcap } from '../sim/pcap';
 
-const PROTOS = ['ARP', 'ICMP', 'UDP'];
+const PROTOS = ['ARP', 'ICMP', 'ICMPv6', 'UDP', 'TCP', 'NDP'];
 
 function Inspector({ ev, names, onClose }: { ev: SimEvent; names: Map<string, string>; onClose(): void }) {
   const t = useT();
   const f = ev.frame;
   const p = f.ip;
+  const p6 = f.ip6;
   const reason = ev.reason ? t(`reason.${ev.reason.code}`, ev.reason.params) : null;
   const Row = ({ k, v }: { k: string; v: string | number | undefined }) => (v === undefined ? null : (
     <div className="grid grid-cols-[150px_1fr] gap-2"><span className="text-muted">{k}</span><span className="font-mono">{v}</span></div>
@@ -43,7 +46,7 @@ function Inspector({ ev, names, onClose }: { ev: SimEvent; names: Map<string, st
                 <Row k="Ethernet II src" v={f.src ? macCisco(f.src) : undefined} />
                 <Row k="Ethernet II dst" v={f.dst ? macCisco(f.dst) : undefined} />
                 <Row k="802.1Q VLAN" v={f.tag} />
-                <Row k="EtherType" v={f.type === 'arp' ? '0x0806 (ARP)' : '0x0800 (IPv4)'} />
+                <Row k="EtherType" v={f.type === 'arp' ? '0x0806 (ARP)' : f.type === 'ipv6' ? '0x86dd (IPv6)' : '0x0800 (IPv4)'} />
               </>)}
             </section>
             {f.arp && (
@@ -64,6 +67,16 @@ function Inspector({ ev, names, onClose }: { ev: SimEvent; names: Map<string, st
                 <Row k="ID" v={p.id} />
               </section>
             )}
+            {p6 && (
+              <section className="rounded border border-line p-2">
+                <h4 className="mb-1 font-semibold text-accent">{t('pdu.l3')}</h4>
+                <Row k="Source IPv6" v={ip6ToString(p6.src)} />
+                <Row k="Destination IPv6" v={ip6ToString(p6.dst)} />
+                <Row k="Hop limit" v={p6.hop} />
+                <Row k="Protocol" v="ICMPv6" />
+                {p6.icmp6 && <Row k="ICMPv6 type / code" v={`${p6.icmp6.type} / ${p6.icmp6.code}`} />}
+              </section>
+            )}
             {p?.icmp && (
               <section className="rounded border border-line p-2">
                 <h4 className="mb-1 font-semibold text-accent">{t('pdu.l4')}</h4>
@@ -75,6 +88,13 @@ function Inspector({ ev, names, onClose }: { ev: SimEvent; names: Map<string, st
               <section className="rounded border border-line p-2">
                 <h4 className="mb-1 font-semibold text-accent">{t('pdu.l4')}</h4>
                 <Row k="UDP ports" v={`${p.udp.sport} → ${p.udp.dport}`} />
+              </section>
+            )}
+            {p?.tcp && (
+              <section className="rounded border border-line p-2">
+                <h4 className="mb-1 font-semibold text-accent">{t('pdu.l4')}</h4>
+                <Row k="TCP ports" v={`${p.tcp.sport} → ${p.tcp.dport}`} />
+                <Row k="Flags" v={p.tcp.flags} />
               </section>
             )}
             {reason && (
@@ -95,7 +115,7 @@ function Events({ project }: { project: string }) {
   const events = useSim((s) => s.events[project]) ?? [];
   const pdus = useSim((s) => s.pdus[project]) ?? [];
   const view = useSim((s) => s.views[project]);
-  const [filter, setFilter] = useState<Record<string, boolean>>({ ARP: true, ICMP: true, UDP: true });
+  const [filter, setFilter] = useState<Record<string, boolean>>({ ARP: true, ICMP: true, ICMPv6: true, UDP: true, TCP: true, NDP: true });
   const [inspect, setInspect] = useState<SimEvent | null>(null);
   const names = useMemo(() => new Map((view?.devices ?? []).map((d) => [d.id, d.name])), [view]);
   const rows = events.filter((e) => filter[e.proto] ?? true).slice(-400).reverse();
@@ -122,6 +142,13 @@ function Events({ project }: { project: string }) {
       </div>
       <div className="nl-scroll w-56 shrink-0 overflow-auto border-l border-line p-2 text-[12px]">
         <div className="mb-1 font-semibold text-muted">{t('sim.filters')}</div>
+        <button
+          className="mb-2 w-full rounded border border-line px-2 py-1 text-left hover:bg-accent/10 disabled:opacity-40"
+          disabled={!events.some((e) => e.kind === 'tx' && !e.frame.hdlc)}
+          onClick={() => downloadFile(`${project}-capture.pcap`, encodePcap(events), 'application/vnd.tcpdump.pcap')}
+        >
+          {t('sim.exportPcap')}
+        </button>
         {PROTOS.map((p) => (
           <label key={p} className="flex items-center gap-2">
             <input type="checkbox" checked={filter[p]} onChange={(e) => setFilter({ ...filter, [p]: e.target.checked })} /> {p}
@@ -132,7 +159,7 @@ function Events({ project }: { project: string }) {
             <div className="mb-1 mt-3 font-semibold text-muted">{t('sim.pdus')}</div>
             {pdus.map((p) => (
               <div key={p.id} className="flex justify-between">
-                <span>{p.src} → {p.dst}</span>
+                <span>{p.protocol.toUpperCase()} {p.src} → {p.dst}{p.dstPort ? ` :${p.dstPort}` : ''}</span>
                 <span className={p.status === 'successful' ? 'text-ok' : p.status === 'failed' ? 'text-bad' : 'text-warn'}>{t(`sim.status.${p.status}`)}</span>
               </div>
             ))}

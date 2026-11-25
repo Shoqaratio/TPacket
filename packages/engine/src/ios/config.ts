@@ -33,6 +33,9 @@ export interface IfConfig {
   ipv6: { ip: bigint; len: number }[];
   /** `ipv6 enable`: link-local only. */
   ipv6Enable: boolean;
+  ipv6Managed: boolean;
+  dhcp6Pool?: string;
+  ospf6?: { pid: number; area: number };
 }
 
 export interface RipConfig {
@@ -51,12 +54,24 @@ export interface OspfConfig {
   defaultOriginate: boolean;
 }
 
+export interface Ospf6Config {
+  pid: number;
+  routerId?: number;
+  passive: string[];
+}
+
 export interface DhcpPool {
   name: string;
   network?: { ip: number; mask: number };
   router?: number;
   dns?: number;
   domain?: string;
+}
+
+export interface Dhcp6Pool {
+  name: string;
+  prefix?: { network: bigint; len: number };
+  dns?: bigint;
 }
 
 export interface NatConfig {
@@ -82,6 +97,7 @@ export interface StaticRoute {
 }
 
 export type AclProto = 'ip' | 'icmp' | 'tcp' | 'udp';
+export type AclType = 'standard' | 'extended';
 export interface AclEntry {
   action: 'permit' | 'deny';
   proto: AclProto;
@@ -116,16 +132,19 @@ export interface IosConfig {
   con: LineConfig;
   vty: LineConfig;
   acls: Map<string, AclEntry[]>;
+  aclTypes: Map<string, AclType>;
   sshVersion?: 1 | 2;
   cdpRun: boolean;
   stpPriority: Map<number, number>;
   rip?: RipConfig;
   ospf?: OspfConfig;
+  ospf6?: Ospf6Config;
   dhcpPools: Map<string, DhcpPool>;
   dhcpExcluded: [number, number][];
   nat: NatConfig;
   ipv6Routing: boolean;
   ipv6Routes: { prefix: bigint; len: number; nextHop?: bigint; iface?: string; distance: number }[];
+  dhcp6Pools: Map<string, Dhcp6Pool>;
 }
 
 export function defaultLine(vty: boolean): LineConfig {
@@ -150,6 +169,7 @@ export function newInterface(name: string, kind: DeviceKind, opts: { svi?: boole
     proxyArp: true,
     ipv6: [],
     ipv6Enable: false,
+    ipv6Managed: false,
   };
 }
 
@@ -168,6 +188,7 @@ export function defaultIosConfig(spec: ModelSpec, physical: string[]): IosConfig
     con: defaultLine(false),
     vty: defaultLine(true),
     acls: new Map(),
+    aclTypes: new Map(),
     cdpRun: true,
     stpPriority: new Map(),
     dhcpPools: new Map(),
@@ -175,6 +196,7 @@ export function defaultIosConfig(spec: ModelSpec, physical: string[]): IosConfig
     nat: { statics: [], pools: new Map(), dynamic: [] },
     ipv6Routing: false,
     ipv6Routes: [],
+    dhcp6Pools: new Map(),
   };
 }
 
@@ -254,9 +276,9 @@ function wildcardText(ip: number, wc: number): string {
   return `${ipToString(ip)} ${ipToString(wc)}`;
 }
 
-export function aclEntryText(name: string, e: AclEntry, numbered: boolean): string {
+export function aclEntryText(name: string, e: AclEntry, numbered: boolean, type?: AclType): string {
   const head = numbered ? `access-list ${name} ` : ' ';
-  const std = Number(name) >= 1 && Number(name) <= 99;
+  const std = type ? type === 'standard' : Number(name) >= 1 && Number(name) <= 99;
   if (std) {
     const src = e.src.wildcard === 0 ? (numbered ? `host ${ipToString(e.src.ip)}` : `host ${ipToString(e.src.ip)}`) : wildcardText(e.src.ip, e.src.wildcard);
     return `${head}${e.action} ${src}`;
@@ -296,6 +318,12 @@ export function renderRunningConfig(c: IosConfig, spec: ModelSpec, physicalOrder
     for (const [vlan, prio] of [...c.stpPriority].sort((a, b) => a[0] - b[0])) L.push(`spanning-tree vlan ${vlan} priority ${prio}`);
     L.push('!');
   }
+    for (const pool of c.dhcp6Pools.values()) {
+      L.push(`ipv6 dhcp pool ${pool.name}`);
+      if (pool.prefix) L.push(` address prefix ${ip6ToString(pool.prefix.network)}/${pool.prefix.len}`);
+      if (pool.dns !== undefined) L.push(` dns-server ${ip6ToString(pool.dns)}`);
+      L.push('exit', '!');
+    }
   for (const name of sortInterfaces([...c.interfaces.keys()], physicalOrder)) {
     const i = c.interfaces.get(name)!;
     L.push(`interface ${name}`);
@@ -319,6 +347,9 @@ export function renderRunningConfig(c: IosConfig, spec: ModelSpec, physicalOrder
       if (i.natOutside) L.push(' ip nat outside');
       for (const a of i.ipv6) L.push(` ipv6 address ${ip6ToString(a.ip)}/${a.len}`);
       if (i.ipv6Enable) L.push(' ipv6 enable');
+      if (i.dhcp6Pool) L.push(` ipv6 dhcp server ${i.dhcp6Pool}`);
+      if (i.ipv6Managed) L.push(' ipv6 nd managed-config-flag');
+      if (i.ospf6) L.push(` ipv6 ospf ${i.ospf6.pid} area ${i.ospf6.area}`);
     }
     if (!name.startsWith('Vlan') && !name.includes('.') && !name.startsWith('Serial')) {
       if (i.duplex !== 'auto') L.push(` duplex ${i.duplex}`);
@@ -345,6 +376,12 @@ export function renderRunningConfig(c: IosConfig, spec: ModelSpec, physicalOrder
     if (c.ospf.defaultOriginate) L.push(' default-information originate');
     L.push('!');
   }
+  if (c.ospf6) {
+    L.push(`ipv6 router ospf ${c.ospf6.pid}`);
+    if (c.ospf6.routerId !== undefined) L.push(` router-id ${ipToString(c.ospf6.routerId)}`);
+    for (const p of c.ospf6.passive) L.push(` passive-interface ${p}`);
+    L.push('!');
+  }
   for (const [lo, hi] of c.dhcpExcluded) L.push(`ip dhcp excluded-address ${ipToString(lo)}${hi !== lo ? ` ${ipToString(hi)}` : ''}`);
   for (const pool of c.dhcpPools.values()) {
     L.push(`ip dhcp pool ${pool.name}`);
@@ -368,6 +405,12 @@ export function renderRunningConfig(c: IosConfig, spec: ModelSpec, physicalOrder
   const numbered = [...c.acls.keys()].filter((k) => /^\d+$/.test(k)).sort((a, b) => Number(a) - Number(b));
   for (const k of numbered) for (const e of c.acls.get(k)!) L.push(aclEntryText(k, e, true));
   if (numbered.length) L.push('!');
+  const named = [...c.acls.keys()].filter((k) => !/^\d+$/.test(k)).sort();
+  for (const k of named) {
+    L.push(`ip access-list ${c.aclTypes.get(k) ?? 'extended'} ${k}`);
+    for (const e of c.acls.get(k)!) L.push(aclEntryText(k, e, false, c.aclTypes.get(k)));
+    L.push('exit', '!');
+  }
   if (c.bannerMotd !== undefined) L.push(`banner motd ^C${c.bannerMotd}^C`, '!');
   L.push('line con 0', ...lineBody(c.con, c.servicePasswordEncryption, false), '!');
   L.push('line vty 0 4', ...lineBody(c.vty, c.servicePasswordEncryption, true), '!');

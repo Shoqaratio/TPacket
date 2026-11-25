@@ -4,8 +4,9 @@ Simulateur réseau **100 % web** inspiré de Cisco Packet Tracer et plateforme p
 BTS SIO. Aucun logiciel Cisco n'est inclus : l'émulation IOS est un interpréteur indépendant.
 
 > **État : v0.1.0 — version initiale enrichie dans l'arbre de travail.** Le simulateur comprend
-> maintenant un sous-ensemble de RIP/OSPF, DHCP, DNS, NAT/PAT, TCP, services applicatifs, IPv6
-> statique et Wi-Fi. Les espaces élève/professeur, devoirs/examens, éditeur de critères,
+> maintenant un sous-ensemble de RIP/OSPFv2/OSPFv3, ACL nommées, DHCP/DHCPv6, DNS, NAT/PAT, TCP,
+> services applicatifs, IPv6 statique/SLAAC et Wi-Fi. Le mode Simulation comprend les PDU complexes
+> ICMP/TCP/UDP et l'export PCAP Ethernet. Les espaces élève/professeur, devoirs/examens, éditeur de critères,
 > collaboration et tutorat sont également présents. Le contenu de cours, d'exercices et de quiz
 > n'est pas encore livré. Les capacités et limites précises sont détaillées dans
 > [PROGRESS.md](PROGRESS.md) et [COMPATIBILITY.md](COMPATIBILITY.md).
@@ -56,7 +57,7 @@ cd apps/web && npx tsc --noEmit -p .                     # types web
 cd apps/web && npx playwright test                       # API temporaire + Vite + Chromium
 ```
 
-Dernière vérification consignée : 76 tests moteur, 18 tests API, typecheck web réussi et 6/6 tests
+Dernière vérification consignée : 80 tests moteur, 18 tests API, typechecks/builds réussis et 8/8 tests
 Playwright réussis dans la suite complète. Consulter [PROGRESS.md](PROGRESS.md) pour les limites de
 validation et de déploiement.
 

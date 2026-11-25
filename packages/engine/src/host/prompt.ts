@@ -48,6 +48,8 @@ export class HostPrompt {
         return HELP;
       case 'ipconfig':
         return this.ipconfig(args);
+      case 'ipv6config':
+        return this.ipv6config(args);
       case 'ping':
         return this.ping(args);
       case 'tracert':
@@ -75,6 +77,7 @@ export class HostPrompt {
       if (!r.ok) return '\nDHCP request failed. \n' + this.ipconfig([]);
       return this.ipconfig([]);
     }
+
     if (sub === '/release') {
       if (h.ipMode !== 'dhcp') return 'Operation failed on adapter FastEthernet0: The adapter is not enabled for DHCP.';
       this.net.setHostConfig(this.devId, { ip: '', mask: '', gateway: '', dns: '' });
@@ -96,6 +99,13 @@ export class HostPrompt {
     if (sub === '/all') L.push(`   DHCP Servers....................: ${d.dhcpServer !== undefined ? ipToString(d.dhcpServer) : '0.0.0.0'}`, `   DNS Servers.....................: ${h.dns || '0.0.0.0'}`);
     if (d.ipConflict) L.push('', `   Warning: IP address conflict detected with ${macCisco(d.ipConflict)}`);
     return L.join('\n');
+  }
+
+  private ipv6config(args: string[]): string {
+    if (args[0]?.toLowerCase() !== '/renew' || args.length !== 1) return 'Usage: ipv6config /renew';
+    const result = this.net.ipv6Renew(this.devId);
+    if (!result.ok) return 'IPv6 autoconfiguration failed.';
+    return `IPv6 address: ${result.ipv6 ?? '::'}\nDefault gateway: ${result.gateway ?? '::'}`;
   }
 
   private target(name: string): { v4?: number; v6?: bigint; error?: string } {

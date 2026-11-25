@@ -4,7 +4,7 @@ import type { IosConfig } from './config';
 import { treesFor } from './commands';
 import { complete, help, match, type MatchResult, type Tree } from './parser';
 
-export type Mode = 'user' | 'priv' | 'config' | 'config-if' | 'config-if-range' | 'config-subif' | 'config-line' | 'config-vlan' | 'config-router' | 'config-dhcp';
+export type Mode = 'user' | 'priv' | 'config' | 'config-if' | 'config-if-range' | 'config-subif' | 'config-line' | 'config-vlan' | 'config-router' | 'config-dhcp' | 'config-dhcp6' | 'config-acl';
 
 export interface Ctx {
   s: IosSession;
@@ -35,6 +35,8 @@ const PROMPT_SUFFIX: Record<Mode, string> = {
   'config-vlan': '(config-vlan)#',
   'config-router': '(config-router)#',
   'config-dhcp': '(dhcp-config)#',
+  'config-dhcp6': '(config-dhcpv6)#',
+  'config-acl': '(config-ext-nacl)#',
 };
 
 export class IosSession {
@@ -42,8 +44,10 @@ export class IosSession {
   targets: string[] = [];
   lineTarget: 'con' | 'vty' = 'con';
   vlanTargets: number[] = [];
-  routerTarget: 'rip' | 'ospf' = 'rip';
+  routerTarget: 'rip' | 'ospf' | 'ospf6' = 'rip';
   dhcpTarget = '';
+  dhcp6Target = '';
+  aclTarget = '';
   /** Remote (Telnet/SSH) session ended with exit/logout. */
   closed = false;
   history: string[] = [];

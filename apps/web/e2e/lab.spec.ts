@@ -115,9 +115,10 @@ test('simulation mode: step a PDU, inspect it layer by layer', async ({ page }) 
   await page.getByRole('button', { name: 'Avance rapide (+30 s)' }).click();
   await page.getByRole('radio', { name: 'Simulation' }).click();
   await page.getByRole('button', { name: 'Réinitialiser la simulation' }).click();
-  await page.getByRole('button', { name: 'PDU simple (ICMP)' }).click();
+  await page.getByRole('button', { name: 'PDU complexe' }).click();
   await nodes.nth(1).click();
   await nodes.nth(2).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Envoyer' }).click();
   await page.getByRole('tab', { name: 'Événements' }).click();
   for (let i = 0; i < 12; i++) await page.getByRole('button', { name: 'Pas à pas' }).click();
   await expect(page.getByText('Réussi')).toBeVisible();
