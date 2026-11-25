@@ -41,13 +41,10 @@ export function AcademyNav({ current, me }: { current: Page; me: Me | null }) {
   );
 }
 
-export function AcademyPageHeader({ current, me, title }: { current: Page; me: Me | null; title: string }) {
+export function AcademyPageHeader({ title }: { title: string }) {
   return (
-    <>
-      <header className="border-b border-line bg-panel px-6 py-3">
-        <h1 className="text-[16px] font-semibold">{title}</h1>
-      </header>
-      <AcademyNav current={current} me={me} />
-    </>
+    <header className="border-b border-line bg-panel px-6 py-3">
+      <h1 className="text-[16px] font-semibold">{title}</h1>
+    </header>
   );
 }

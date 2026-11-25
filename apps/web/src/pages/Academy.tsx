@@ -34,10 +34,9 @@ function EmptyState({ icon, title, description }: { icon: React.ReactNode; title
 
 export function CoursesPage() {
   const t = useT();
-  const me = useUi((s) => s.me);
   return (
     <div className="nl-scroll h-full overflow-auto">
-      <AcademyPageHeader current="courses" me={me} title={t('academy.courses')} />
+      <AcademyPageHeader title={t('academy.courses')} />
       <main className="mx-auto max-w-6xl p-6">
         <EmptyState icon={<BookOpen size={28} />} title={t('academy.coursesEmptyTitle')} description={t('academy.coursesEmpty')} />
       </main>
@@ -94,7 +93,7 @@ export function ExercisesPage() {
 
   return (
     <div className="nl-scroll h-full overflow-auto">
-      <AcademyPageHeader current="exercises" me={me} title={t('academy.exercises')} />
+      <AcademyPageHeader title={t('academy.exercises')} />
       <main className="mx-auto max-w-6xl p-6">
         <p className="mb-4 text-[12px] text-muted">{t('academy.exercisesDescription')}</p>
         {loading ? <p className="text-muted">{t('academy.loading')}</p> : error ? (
@@ -135,7 +134,7 @@ export function ProfilePage() {
   if (!me) return null;
   return (
     <div className="nl-scroll h-full overflow-auto">
-      <AcademyPageHeader current="profile" me={me} title={t('academy.profile')} />
+      <AcademyPageHeader title={t('academy.profile')} />
       <main className="mx-auto grid max-w-6xl gap-4 p-6 md:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
         <section className={card}>
           <div className="mb-4 flex items-center gap-3">

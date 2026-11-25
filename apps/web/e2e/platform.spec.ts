@@ -4,15 +4,20 @@ import { registerAndSignIn } from './auth';
 test('academy navigation exposes dashboard, courses, exercises, activities and profile', async ({ page }) => {
   await registerAndSignIn(page, 'academy');
   const nav = page.getByRole('navigation', { name: 'Navigation pédagogique' });
+  const masthead = page.getByRole('heading', { name: 'TPacket Academy' });
   await expect(nav.getByRole('button', { name: 'Tableau de bord' })).toHaveAttribute('aria-current', 'page');
   await nav.getByRole('button', { name: 'Mes cours' }).click();
+  await expect(masthead).toBeVisible();
   await expect(page.locator('.nl-page-enter')).toBeVisible();
   await expect(page.getByText('Aucun cours disponible')).toBeVisible();
   await nav.getByRole('button', { name: 'Mes exercices' }).click();
+  await expect(masthead).toBeVisible();
   await expect(page.getByText('Aucun exercice publié')).toBeVisible();
   await nav.getByRole('button', { name: 'Mon profil' }).click();
+  await expect(masthead).toBeVisible();
   await expect(page.getByText('Informations du compte')).toBeVisible();
   await nav.getByRole('button', { name: 'Mes activités' }).click();
+  await expect(masthead).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Mes devoirs' })).toBeVisible();
 });
 
