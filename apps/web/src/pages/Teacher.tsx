@@ -15,6 +15,7 @@ interface Dashboard {
   hardest: { criterion: string; failures: number }[];
   recent: { action: string; at: string }[];
 }
+interface OrgOption { id: string; name: string; slug: string }
 interface ClassRow { id: string; name: string; academic_year: string; archived: boolean }
 interface Exercise { id: string; title: string; latest_version_id: string | null; version: number | null; published: boolean }
 interface AssignmentRow { id: string; title: string; due_at: string | null; exam: boolean; duration_min: number | null; max_attempts: number; results: string; max_score: number | null }
@@ -23,6 +24,10 @@ interface SubRow { student_id: string; display_name: string; attempts: number; s
 
 const input = 'rounded border border-line bg-panel2 px-2 py-1 outline-none focus:border-accent';
 const card = 'rounded-lg border border-line bg-panel p-4';
+
+function orgSlug(name: string): string {
+  return name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
 
 function Stat({ label, value }: { label: string; value: string | number }) {
   return <div className={card}><div className="text-[11px] uppercase text-muted">{label}</div><div className="text-[22px] font-semibold">{value}</div></div>;
@@ -166,30 +171,119 @@ function ClassView({ cid, exercises, onBack }: { cid: string; exercises: Exercis
 
 export function TeacherPage() {
   const t = useT();
-  const { me, set } = useUi();
-  const orgs = (me?.memberships ?? []).filter((m) => m.role !== 'student');
-  const [org, setOrg] = useState(orgs[0]?.org_id ?? '');
+  const { me, set, toast } = useUi();
+  const [orgs, setOrgs] = useState<OrgOption[]>([]);
+  const [org, setOrg] = useState('');
+  const [orgLoading, setOrgLoading] = useState(true);
+  const [orgLoadError, setOrgLoadError] = useState(false);
+  const [orgName, setOrgName] = useState('');
+  const [creatingOrg, setCreatingOrg] = useState(false);
+  const [orgCreateError, setOrgCreateError] = useState<string | null>(null);
   const [dash, setDash] = useState<Dashboard | null>(null);
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [name, setName] = useState('');
   const year = new Date().getMonth() >= 7 ? `${new Date().getFullYear()}-${new Date().getFullYear() + 1}` : `${new Date().getFullYear() - 1}-${new Date().getFullYear()}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    setOrgLoading(true);
+    setOrgLoadError(false);
+    void (async () => {
+      try {
+        const rows = me?.is_superadmin
+          ? await api<OrgOption[]>('GET', '/orgs')
+          : (me?.memberships ?? []).filter((m) => m.role !== 'student').map((m) => ({ id: m.org_id, name: m.org_name, slug: '' }));
+        if (cancelled) return;
+        setOrgs(rows);
+        setOrg((current) => rows.some((item) => item.id === current) ? current : rows[0]?.id ?? '');
+      } catch {
+        if (!cancelled) setOrgLoadError(true);
+      } finally {
+        if (!cancelled) setOrgLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [me]);
+
   const reload = useCallback(() => {
-    if (!org) return;
-    void api<Dashboard>('GET', `/orgs/${org}/dashboard`).then(setDash);
-    void api<ClassRow[]>('GET', `/orgs/${org}/classes`).then(setClasses);
-    void api<Exercise[]>('GET', `/orgs/${org}/exercises`).then(setExercises);
-  }, [org]);
+    if (!org) {
+      setDash(null);
+      setClasses([]);
+      setExercises([]);
+      return;
+    }
+    void Promise.all([
+      api<Dashboard>('GET', `/orgs/${org}/dashboard`),
+      api<ClassRow[]>('GET', `/orgs/${org}/classes`),
+      api<Exercise[]>('GET', `/orgs/${org}/exercises`),
+    ]).then(([nextDash, nextClasses, nextExercises]) => {
+      setDash(nextDash);
+      setClasses(nextClasses);
+      setExercises(nextExercises);
+    }).catch((err: unknown) => {
+      toast(err instanceof ApiError ? t(`teacher.err.${err.code}`) : t('teacher.actionError'), 'error');
+    });
+  }, [org, toast]);
   useEffect(reload, [reload]);
+
+  const createOrg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = orgName.trim();
+    if (!trimmed) return;
+    setCreatingOrg(true);
+    setOrgCreateError(null);
+    try {
+      const created = await api<OrgOption>('POST', '/orgs', { name: trimmed, slug: orgSlug(trimmed) });
+      setOrgs((current) => [...current, created]);
+      setOrg(created.id);
+      setOrgName('');
+    } catch (err) {
+      setOrgCreateError(err instanceof ApiError ? t(`teacher.err.${err.code}`) : t('teacher.actionError'));
+    } finally {
+      setCreatingOrg(false);
+    }
+  };
+
+  const createClass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!org || !trimmed) return;
+    try {
+      await api('POST', `/orgs/${org}/classes`, { name: trimmed, academic_year: year });
+      setName('');
+      reload();
+    } catch (err) {
+      toast(err instanceof ApiError ? t(`teacher.err.${err.code}`) : t('teacher.actionError'), 'error');
+    }
+  };
+
   return (
     <div className="nl-scroll h-full overflow-auto">
       <header className="flex items-center gap-3 border-b border-line bg-panel px-6 py-3">
         <button onClick={() => set({ page: 'home' })} aria-label="back"><ArrowLeft size={16} /></button>
         <h1 className="text-[16px] font-semibold">{t('teacher.title')}</h1>
-        <select className={input} value={org} onChange={(e) => setOrg(e.target.value)}>{orgs.map((o) => <option key={o.org_id} value={o.org_id}>{o.org_name}</option>)}</select>
+        <select aria-label={t('teacher.chooseOrg')} className={input} value={org} disabled={orgLoading || orgs.length === 0} onChange={(e) => setOrg(e.target.value)}>
+          <option value="">{orgLoading ? t('teacher.loadingOrganizations') : t('teacher.chooseOrg')}</option>
+          {orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
       </header>
       <main className="mx-auto flex max-w-6xl flex-col gap-4 p-6">
+        {orgLoadError && <p className={`${card} text-bad`} role="alert">{t('teacher.orgLoadError')}</p>}
+        {!orgLoading && !orgLoadError && orgs.length === 0 && (
+          me?.is_superadmin ? (
+            <section className={card}>
+              <h2 className="mb-2 font-semibold">{t('teacher.createOrganization')}</h2>
+              <p className="mb-3 text-[12px] text-muted">{t('teacher.noOrgHint')}</p>
+              <form className="flex gap-2" onSubmit={(e) => void createOrg(e)}>
+                <input aria-label={t('teacher.orgName')} required minLength={2} className={`${input} flex-1`} placeholder={t('teacher.orgNamePlaceholder')} value={orgName} onChange={(e) => setOrgName(e.target.value)} />
+                <button disabled={creatingOrg} className="rounded bg-accent px-3 py-1 text-white disabled:opacity-50">{creatingOrg ? t('academy.loading') : t('teacher.createOrganization')}</button>
+              </form>
+              {orgCreateError && <p className="mt-2 text-[12px] text-bad" role="alert">{orgCreateError}</p>}
+            </section>
+          ) : <p className={`${card} text-muted`}>{t('teacher.noOrganizations')}</p>
+        )}
         {open ? <ClassView cid={open} exercises={exercises} onBack={() => { setOpen(null); reload(); }} /> : (
           <>
             {dash && (
@@ -204,13 +298,14 @@ export function TeacherPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <section className={card}>
                 <h2 className="mb-2 font-semibold">{t('teacher.classes')}</h2>
+                {!org && !orgLoading && !orgLoadError && !me?.is_superadmin && <p className="mb-3 text-[12px] text-muted">{t('teacher.noOrganizations')}</p>}
                 <ul className="mb-3">{classes.map((c) => {
                   const pc = dash?.per_class.find((x) => x.class_id === c.id);
                   return <li key={c.id} className="flex justify-between border-t border-line py-1"><button className="text-accent" onClick={() => setOpen(c.id)}>{c.name}</button><span className="text-muted">{c.academic_year} · {t('teacher.avg')} {pc?.average_20 ?? '—'}/20</span></li>;
                 })}</ul>
-                <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (name) void api('POST', `/orgs/${org}/classes`, { name, academic_year: year }).then(() => { setName(''); reload(); }); }}>
-                  <input className={`${input} flex-1`} placeholder={t('teacher.className')} value={name} onChange={(e) => setName(e.target.value)} />
-                  <button className="rounded bg-accent px-3 text-white">{t('teacher.createClass')}</button>
+                <form className="flex gap-2" onSubmit={(e) => void createClass(e)}>
+                  <input required disabled={!org || orgLoading} className={`${input} flex-1 disabled:opacity-50`} placeholder={t('teacher.className')} value={name} onChange={(e) => setName(e.target.value)} />
+                  <button disabled={!org || orgLoading} className="rounded bg-accent px-3 text-white disabled:opacity-50">{t('teacher.createClass')}</button>
                 </form>
               </section>
               <section className={card}>

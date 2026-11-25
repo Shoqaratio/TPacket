@@ -102,8 +102,21 @@ test('teacher creates a class and an assignment; the student joins, submits and 
   const admin = { ctx: adminCtx, page: adminPage };
   const adminReq = admin.ctx.request;
   const csrf = async (c: typeof admin) => (await c.ctx.cookies()).find((x) => x.name === 'nl_csrf')!.value;
-  const org = await (await adminReq.post(`${api}/orgs`, { data: { name: 'Lycée Test', slug: 'lycee-test' }, headers: { 'x-csrf-token': await csrf(admin) } })).json();
-  const inv = await (await adminReq.post(`${api}/orgs/${org.id}/invites`, { data: { role: 'teacher' }, headers: { 'x-csrf-token': await csrf(admin) } })).json();
+  await adminPage.getByRole('button', { name: 'Espace enseignant' }).click();
+  const orgSelect = adminPage.getByRole('combobox', { name: 'Choisir un établissement' });
+  const orgNameInput = adminPage.getByLabel('Nom de l’établissement');
+  await expect.poll(async () => Boolean(await orgSelect.inputValue()) || (await orgNameInput.count()) === 1).toBe(true);
+  if (await orgNameInput.count()) {
+    await orgNameInput.fill('Lycée Test');
+    await adminPage.getByRole('button', { name: 'Créer un établissement' }).click();
+  }
+  await expect(orgSelect).toHaveValue(/.+/);
+  const orgId = await orgSelect.inputValue();
+  expect(orgId).not.toBe('');
+  await adminPage.getByPlaceholder('Nom de la classe (ex. SIO1 A)').fill('SIO2');
+  await adminPage.getByRole('button', { name: 'Créer', exact: true }).click();
+  await expect(adminPage.getByRole('button', { name: 'SIO2' })).toBeVisible();
+  const inv = await (await adminReq.post(`${api}/orgs/${orgId}/invites`, { data: { role: 'teacher' }, headers: { 'x-csrf-token': await csrf(admin) } })).json();
 
   const teacher = await reg('prof@example.com', 'Mme Prof');
   await teacher.page.getByLabel('Code de classe / d’établissement').fill(inv.code);
@@ -112,7 +125,7 @@ test('teacher creates a class and an assignment; the student joins, submits and 
   // Exercise published through the API (the wizard itself is covered by the engine grading tests).
   const project = { format: 'netlab', schemaVersion: 1, name: 'LAN', devices: [{ id: 'd1', model: 'PC', name: 'PC0', x: 100, y: 100, powered: true, macBase: '000af3000001', modules: {}, host: { ipMode: 'static', ip: '', mask: '', gateway: '', dns: '', portUp: true } }], links: [], notes: [], zones: [], counters: { device: 1, link: 0, mac: 64, note: 0 } };
   const h = { 'x-csrf-token': await csrf(teacher) };
-  const ex = await (await teacher.ctx.request.post(`${api}/orgs/${org.id}/exercises`, { data: { title: 'Adresser PC0' }, headers: h })).json();
+  const ex = await (await teacher.ctx.request.post(`${api}/orgs/${orgId}/exercises`, { data: { title: 'Adresser PC0' }, headers: h })).json();
   await teacher.ctx.request.post(`${api}/exercises/${ex.id}/versions`, { headers: h, data: { statement: 'Donnez à PC0 l’adresse 10.0.0.10/8.', initial_project: project, publish: true, rubric: { maxScore: 20, criteria: [{ id: 'ip', type: 'host_config', device: 'PC0', field: 'ip', expected: '10.0.0.10', points: 20 }] } } });
 
   const tp = teacher.page;
