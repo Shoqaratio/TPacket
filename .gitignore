@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+*.pyc
+__pycache__/
+.venv/
+.pytest_cache/
+apps/api/*.db
+coverage/
+playwright-report/
+test-results/
+apps/web/test-results/
+apps/web/dev-dist/

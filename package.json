@@ -1,0 +1,16 @@
+{
+  "name": "tpacket",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/web"
+  ],
+  "scripts": {
+    "build": "npm run build -w @netlab/engine && npm run build -w @netlab/web",
+    "test": "npm test -w @netlab/engine && npm test -w @netlab/web",
+    "typecheck": "npm run typecheck -w @netlab/engine && npm run typecheck -w @netlab/web",
+    "dev": "npm run dev -w @netlab/web"
+  }
+}

@@ -1,0 +1,21 @@
+# Development overrides: hot reload, exposed ports, debug-friendly settings.
+services:
+  db:
+    ports: ["5432:5432"]
+  api:
+    build: !reset null
+    image: python:3.12-slim-bookworm
+    working_dir: /app
+    command: sh -c "pip install -q -r requirements-dev.txt && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    read_only: false
+    environment:
+      NETLAB_ENV: development
+      NETLAB_COOKIE_SECURE: "false"
+      NETLAB_GRADER_PATH: /engine/dist/grader.mjs
+    volumes:
+      - ./apps/api:/app
+      - ./packages/engine:/engine
+    ports: ["8000:8000"]
+    networks: [backend, frontend]
+  web:
+    profiles: ["prod-web"]
