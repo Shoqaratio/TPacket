@@ -1,6 +1,7 @@
 import { ArrowLeft } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
+import { AcademyNav } from '../components/AcademyNav';
 import { useT } from '../i18n';
 import { createLocalProject } from '../projects';
 import { useUi } from '../store';
@@ -189,6 +190,7 @@ export function TeacherPage() {
         <h1 className="text-[16px] font-semibold">{t('teacher.title')}</h1>
         <select className={input} value={org} onChange={(e) => setOrg(e.target.value)}>{orgs.map((o) => <option key={o.org_id} value={o.org_id}>{o.org_name}</option>)}</select>
       </header>
+      <AcademyNav current="teacher" me={me} />
       <main className="mx-auto flex max-w-6xl flex-col gap-4 p-6">
         {open ? <ClassView cid={open} exercises={exercises} onBack={() => { setOpen(null); reload(); }} /> : (
           <>

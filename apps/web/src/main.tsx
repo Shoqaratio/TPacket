@@ -4,6 +4,7 @@ import { fetchMe } from './api';
 import { Workspace } from './components/Workspace';
 import './index.css';
 import { Home } from './pages/Home';
+import { CoursesPage, ExercisesPage, ProfilePage } from './pages/Academy';
 import { StudentPage } from './pages/Student';
 import { TeacherPage } from './pages/Teacher';
 import { restoreAssignment } from './assignment';
@@ -81,7 +82,7 @@ function App() {
   if (!restored) return null;
   return (
     <>
-      {me ? active && opened ? <Workspace key={active} project={active} /> : page === 'teacher' ? <TeacherPage /> : page === 'student' ? <StudentPage /> : <Home /> : <Home />}
+      {me ? active && opened ? <Workspace key={active} project={active} /> : page === 'teacher' ? <TeacherPage /> : page === 'student' ? <StudentPage /> : page === 'courses' ? <CoursesPage /> : page === 'exercises' ? <ExercisesPage /> : page === 'profile' ? <ProfilePage /> : <Home /> : <Home />}
       <Toasts />
     </>
   );

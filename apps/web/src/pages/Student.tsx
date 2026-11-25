@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
 import { openAssignment } from '../assignment';
+import { AcademyNav } from '../components/AcademyNav';
 import { useT } from '../i18n';
 import { useUi } from '../store';
 
@@ -25,7 +26,7 @@ const card = 'rounded-lg border border-line bg-panel p-4';
 
 export function StudentPage() {
   const t = useT();
-  const { set, toast } = useUi();
+  const { me, set, toast } = useUi();
   const [data, setData] = useState<{ assignments: Item[]; average_20: number | null; announcements: { text: string; created_at: string }[] } | null>(null);
   const [subs, setSubs] = useState<{ item: Item; subs: Sub[] } | null>(null);
   useEffect(() => void api<NonNullable<typeof data>>('GET', '/me/assignments').then(setData), []);
@@ -45,6 +46,7 @@ export function StudentPage() {
         <div className="flex-1" />
         {data?.average_20 !== null && data?.average_20 !== undefined && <span className="rounded bg-accent2/15 px-3 py-1 font-semibold">{t('student.average')} : {data.average_20} / 20</span>}
       </header>
+      <AcademyNav current="student" me={me} />
       <main className="mx-auto grid max-w-6xl gap-4 p-6 md:grid-cols-[1fr_300px]">
         <section className={card}>
           <h2 className="mb-2 font-semibold">{t('student.assignments')}</h2>

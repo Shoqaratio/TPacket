@@ -2,6 +2,7 @@ import { FolderOpen, Moon, Plus, Sun, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, type Me } from '../api';
 import { leaveCollab } from '../collab';
+import { AcademyNav } from '../components/AcademyNav';
 import { useT } from '../i18n';
 import { createLocalProject, importNetlabFile, openProject, pullCloud } from '../projects';
 import { storage, type StoredProject } from '../storage';
@@ -60,6 +61,7 @@ export function Home() {
   const t = useT();
   const ui = useUi();
   const [projects, setProjects] = useState<StoredProject[]>([]);
+  const [assignments, setAssignments] = useState<{ attempts: number }[] | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const reload = () => void storage.list().then(setProjects);
   useEffect(() => {
@@ -68,6 +70,22 @@ export function Home() {
   }, [ui.me]);
   useEffect(() => {
     if (ui.me) void pullCloud().then(reload).catch(() => {});
+  }, [ui.me]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!ui.me) {
+      setAssignments(null);
+      return () => { cancelled = true; };
+    }
+    void api<{ assignments: { attempts: number }[] }>('GET', '/me/assignments').then((r) => {
+      if (!cancelled) setAssignments(r.assignments);
+    }).catch(() => {
+      if (!cancelled) {
+        setAssignments(null);
+        ui.toast(t('academy.loadError'), 'error');
+      }
+    });
+    return () => { cancelled = true; };
   }, [ui.me]);
 
   const signedIn = (me: Me) => ui.set({ me });
@@ -109,13 +127,22 @@ export function Home() {
         <button aria-label={t('view.theme')} className="rounded p-1.5 hover:bg-panel2" onClick={() => ui.set({ theme: ui.theme === 'dark' ? 'light' : 'dark' })}>{ui.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</button>
         {ui.me && (
           <>
-            {ui.me.memberships.some((m) => m.role !== 'student') && <button className="rounded bg-accent2 px-3 py-1 text-white" onClick={() => ui.set({ page: 'teacher' })}>{t('teacher.title')}</button>}
             {ui.me.memberships.length > 0 && <button className="rounded border border-line px-3 py-1" onClick={() => ui.set({ page: 'student' })}>{t('student.title')}</button>}
             <span className="text-muted">{ui.me.display_name}</span>
             <button className="rounded border border-line px-2 py-1" onClick={() => void signOut()}>{t('auth.logout')}</button>
           </>
         )}
       </header>
+      <AcademyNav current="home" me={ui.me} />
+      <main className="mx-auto max-w-6xl px-6 pt-5">
+        <h2 className="mb-3 text-[16px] font-semibold">{t('academy.dashboard')}</h2>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-lg border border-line bg-panel p-3"><div className="text-[11px] uppercase text-muted">{t('home.projects')}</div><div className="text-[22px] font-semibold">{projects.length}</div></div>
+          <div className="rounded-lg border border-line bg-panel p-3"><div className="text-[11px] uppercase text-muted">{t('academy.activities')}</div><div className="text-[22px] font-semibold">{assignments?.length ?? '—'}</div></div>
+          <div className="rounded-lg border border-line bg-panel p-3"><div className="text-[11px] uppercase text-muted">{t('academy.toDo')}</div><div className="text-[22px] font-semibold">{assignments ? assignments.filter((a) => !a.attempts).length : '—'}</div></div>
+          <div className="rounded-lg border border-line bg-panel p-3"><div className="text-[11px] uppercase text-muted">{t('academy.memberships')}</div><div className="text-[22px] font-semibold">{ui.me.memberships.length}</div></div>
+        </div>
+      </main>
       <div className="mx-auto grid max-w-6xl gap-6 p-6 md:grid-cols-[1fr_300px]">
         <section>
           <div className="mb-1 flex items-center gap-2">

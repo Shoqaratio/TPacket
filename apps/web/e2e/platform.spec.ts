@@ -1,6 +1,20 @@
 import { expect, type Page, test } from '@playwright/test';
 import { registerAndSignIn } from './auth';
 
+test('academy navigation exposes dashboard, courses, exercises, activities and profile', async ({ page }) => {
+  await registerAndSignIn(page, 'academy');
+  const nav = page.getByRole('navigation', { name: 'Navigation pédagogique' });
+  await expect(nav.getByRole('button', { name: 'Tableau de bord' })).toHaveAttribute('aria-current', 'page');
+  await nav.getByRole('button', { name: 'Mes cours' }).click();
+  await expect(page.getByText('Aucun cours disponible')).toBeVisible();
+  await nav.getByRole('button', { name: 'Mes exercices' }).click();
+  await expect(page.getByText('Aucun exercice publié')).toBeVisible();
+  await nav.getByRole('button', { name: 'Mon profil' }).click();
+  await expect(page.getByText('Informations du compte')).toBeVisible();
+  await nav.getByRole('button', { name: 'Mes activités' }).click();
+  await expect(page.getByRole('heading', { name: 'Mes devoirs' })).toBeVisible();
+});
+
 async function drop(page: Page, model: string, x: number, y: number) {
   const dt = await page.evaluateHandle((m) => {
     const d = new DataTransfer();
@@ -110,7 +124,14 @@ test('teacher creates a class and an assignment; the student joins, submits and 
   const sp = student.page;
   await sp.getByLabel('Code de classe / d’établissement').fill(code);
   await sp.getByRole('button', { name: 'Rejoindre' }).click();
-  await sp.getByRole('button', { name: 'Mes devoirs' }).click();
+  const nav = sp.getByRole('navigation', { name: 'Navigation pédagogique' });
+  await nav.getByRole('button', { name: 'Mes exercices' }).click();
+  await expect(sp.getByRole('heading', { name: 'Adresser PC0' })).toBeVisible();
+  await sp.getByRole('button', { name: 'S’entraîner' }).click();
+  await expect(sp.locator('.react-flow')).toBeVisible();
+  await sp.getByRole('button', { name: 'Fichier' }).click();
+  await sp.getByRole('menuitem', { name: 'Retour aux projets' }).click();
+  await nav.getByRole('button', { name: 'Mes activités' }).click();
   await sp.getByRole('button', { name: 'Ouvrir' }).click();
   await expect(sp.getByRole('region', { name: 'Devoir' })).toContainText('Adresser PC0');
   await sp.locator('.react-flow__node-device').first().click();

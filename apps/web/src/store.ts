@@ -5,7 +5,7 @@ import type { Me } from './api';
 
 export type Tool = { kind: 'select' } | { kind: 'cable'; cable: CableType | 'auto' } | { kind: 'note' } | { kind: 'zone' } | { kind: 'pdu' };
 export type Mode = 'realtime' | 'simulation';
-export type Page = 'home' | 'teacher' | 'student';
+export type Page = 'home' | 'teacher' | 'student' | 'courses' | 'exercises' | 'profile';
 
 export interface Toast {
   id: number;
