@@ -79,7 +79,7 @@ export function ExercisesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);
-  const builtInExercises = useMemo(() => starterExercises.map((exercise) => {
+  const builtInExercises = useMemo<Exercise[]>(() => starterExercises.map((exercise) => {
     const title = localizedText(exercise.title, locale);
     const statement = localizedText(exercise.statement, locale);
     return {
