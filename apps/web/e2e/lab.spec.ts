@@ -52,6 +52,44 @@ test('copies a device between projects through the system clipboard', async ({ p
   await expect(page.locator('.react-flow__node-device')).toHaveCount(1);
 });
 
+test('keeps other devices visible while dragging a switch and after dropping it', async ({ page }) => {
+  await registerAndSignIn(page, 'drag');
+  await page.getByRole('button', { name: 'Nouveau projet' }).click();
+  await drop(page, '2960-24TT', 560, 200);
+  await drop(page, 'PC', 420, 380);
+  await drop(page, 'PC', 700, 380);
+
+  const nodes = page.locator('.react-flow__node-device');
+  const clock = page.getByRole('status').locator('.font-mono');
+  await expect(nodes).toHaveCount(3);
+  for (const node of await nodes.all()) {
+    await expect(node).toBeVisible();
+    await expect(node).toBeInViewport();
+  }
+  const switchNode = nodes.first();
+  const start = (await switchNode.boundingBox())!;
+  const stationary = await Promise.all([nodes.nth(1).boundingBox(), nodes.nth(2).boundingBox()]);
+  const x = start.x + start.width / 2;
+  const y = start.y + start.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  for (const offset of [30, 60, 90]) {
+    await page.mouse.move(x + offset, y + offset / 2);
+    expect(await nodes.evaluateAll((elements) => elements.filter((element) => getComputedStyle(element).visibility === 'visible').length)).toBe(3);
+  }
+  await page.mouse.up();
+
+  // The next real-time simulation update also republishes the controlled nodes.
+  await expect(clock).not.toHaveText((await clock.textContent())!);
+  await expect(nodes).toHaveCount(3);
+  for (const node of await nodes.all()) {
+    await expect(node).toBeVisible();
+    await expect(node).toBeInViewport();
+  }
+  expect((await switchNode.boundingBox())!.x).toBeGreaterThan(start.x + 50);
+  expect(await Promise.all([nodes.nth(1).boundingBox(), nodes.nth(2).boundingBox()])).toEqual(stationary);
+});
+
 test('build a LAN, configure it from the GUI and the CLI, and ping for real', async ({ page }) => {
   await registerAndSignIn(page, 'lab');
   await page.getByRole('button', { name: 'Nouveau projet' }).click();

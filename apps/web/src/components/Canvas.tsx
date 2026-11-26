@@ -185,6 +185,7 @@ export function Canvas({ project }: { project: string }) {
   const { tool, selection, showIps, showPorts, snap, minimap, mode, set, toast } = useUi();
   const rf = useReactFlow();
   const [drag, setDrag] = useState<Record<string, { x: number; y: number }>>({});
+  const [measurements, setMeasurements] = useState<Record<string, NonNullable<Node['measured']>>>({});
   const [pending, setPending] = useState<{ device: string; port?: string } | null>(null);
   const [pduConfig, setPduConfig] = useState<{ src: string; dst: string } | null>(null);
   const [pduProtocol, setPduProtocol] = useState<'icmp' | 'tcp' | 'udp'>('icmp');
@@ -199,13 +200,19 @@ export function Canvas({ project }: { project: string }) {
 
   useEffect(() => setPending(null), [tool]);
 
-  const nodes: Node[] = useMemo(() => {
+  const projectNodes: Node[] = useMemo(() => {
     if (!view) return [];
-    const zones: Node[] = view.zones.map((z) => ({ id: z.id, type: 'zone', position: drag[z.id] ?? { x: z.x, y: z.y }, width: z.w, height: z.h, style: { width: z.w, height: z.h }, zIndex: -1, selected: selection.includes(z.id), data: { id: z.id, label: z.label, color: z.color, project } }));
-    const devs: Node[] = view.devices.map((d) => ({ id: d.id, type: 'device', position: drag[d.id] ?? { x: d.x, y: d.y }, selected: selection.includes(d.id), data: { dev: d, showIps } }));
-    const notes: Node[] = view.notes.map((n) => ({ id: n.id, type: 'note', position: drag[n.id] ?? { x: n.x, y: n.y }, selected: selection.includes(n.id), data: { id: n.id, text: n.text, color: n.color, project } }));
-    return [...zones, ...devs, ...notes];
-  }, [view, drag, selection, showIps, project]);
+    const zones: Node[] = view.zones.map((z) => ({ id: z.id, type: 'zone', position: { x: z.x, y: z.y }, width: z.w, height: z.h, style: { width: z.w, height: z.h }, zIndex: -1, selected: selection.includes(z.id), data: { id: z.id, label: z.label, color: z.color, project } }));
+    const devs: Node[] = view.devices.map((d) => ({ id: d.id, type: 'device', position: { x: d.x, y: d.y }, selected: selection.includes(d.id), data: { dev: d, showIps } }));
+    const notes: Node[] = view.notes.map((n) => ({ id: n.id, type: 'note', position: { x: n.x, y: n.y }, selected: selection.includes(n.id), data: { id: n.id, text: n.text, color: n.color, project } }));
+    // Controlled nodes must retain the measurements reported by React Flow.
+    return [...zones, ...devs, ...notes].map((node) => ({ ...node, measured: measurements[node.id] }));
+  }, [view, measurements, selection, showIps, project]);
+
+  const nodes = useMemo(() => projectNodes.map((node) => {
+    const position = drag[node.id];
+    return position ? { ...node, position } : node;
+  }), [projectNodes, drag]);
 
   const edges: Edge[] = useMemo(() => {
     if (!view) return [];
@@ -222,9 +229,11 @@ export function Canvas({ project }: { project: string }) {
   const onNodesChange = useCallback(
     (changes: Iterable<NodeChange>) => {
       const moves: Record<string, { x: number; y: number }> = {};
+      const measured: typeof measurements = {};
       let sel: string[] | null = null;
       for (const c of changes) {
         if (c.type === 'position' && c.position) moves[c.id] = c.position;
+        if (c.type === 'dimensions' && c.dimensions) measured[c.id] = c.dimensions;
         if (c.type === 'select') {
           sel ??= [...useUi.getState().selection];
           if (c.selected && !sel.includes(c.id)) sel.push(c.id);
@@ -232,6 +241,10 @@ export function Canvas({ project }: { project: string }) {
         }
       }
       if (Object.keys(moves).length) setDrag((p) => ({ ...p, ...moves }));
+      if (Object.keys(measured).length) setMeasurements((p) => {
+        const changed = Object.entries(measured).filter(([id, size]) => p[id]?.width !== size.width || p[id]?.height !== size.height);
+        return changed.length ? { ...p, ...Object.fromEntries(changed) } : p;
+      });
       if (sel) set({ selection: sel });
     },
     [set],
@@ -240,6 +253,22 @@ export function Canvas({ project }: { project: string }) {
   const fail = (e: unknown) => {
     const err = e as SimError;
     toast(t(`err.${err.code ?? 'generic'}`) === `err.${err.code}` ? err.message : t(`err.${err.code ?? 'generic'}`), 'error');
+  };
+
+  const commitDrag = (dragged: Node[]) => {
+    if (!dragged.length) return;
+    const positions = Object.fromEntries(dragged.map(({ id, position }) => [id, { ...position }]));
+    const moves = Object.entries(positions).map(([id, position]) => ({ id, ...position }));
+    setDrag((current) => ({ ...current, ...positions }));
+    void sim.op(project, 'moveDevices', moves).catch(fail).finally(() => {
+      setDrag((current) => {
+        const next = { ...current };
+        for (const [id, position] of Object.entries(positions)) {
+          if (next[id] === position) delete next[id];
+        }
+        return next;
+      });
+    });
   };
 
   const onNodeClick = (ev: React.MouseEvent, node: Node) => {
@@ -327,10 +356,7 @@ export function Canvas({ project }: { project: string }) {
               for (const c of changes) if (c.type === 'select') sel = c.selected ? [...new Set([...sel, c.id])] : sel.filter((x) => x !== c.id);
               set({ selection: sel });
             }}
-            onNodeDragStop={(_, __, dragged) => {
-              const moves = dragged.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y }));
-              void sim.op(project, 'moveDevices', moves).then(() => setDrag({}));
-            }}
+            onNodeDragStop={(_, node, dragged) => commitDrag(dragged.length ? dragged : [node])}
             onNodeClick={onNodeClick}
             onNodeDoubleClick={(_, n) => devices.has(n.id) && set({ windowDevice: n.id })}
             onPaneClick={onPaneClick}
