@@ -1,10 +1,10 @@
-# Avancement — 25 novembre 2026
+# Avancement — 26 novembre 2026
 
 L'application reste en version `0.1.0`, mais a évolué depuis sa première livraison. Les fondations
 (phase 1), le simulateur fondamental (phase 2) et le périmètre prévu du simulateur avancé (phase 3)
-sont livrés. Les phases 4 à 6 sont **partiellement livrées** : classes et devoirs,
-éditeur d'exercices, collaboration, examens et tutorat sont présents. Le contenu pédagogique livré
-reste à créer.
+sont livrés. La phase 6 dispose désormais de scénarios Network Incident, suivi des compétences,
+récompenses personnelles et bibliothèque communautaire modérée ; leur suite de tests doit encore être
+exécutée. Les phases 4 et 5 restent **partiellement livrées**. Le contenu pédagogique livré reste à créer.
 
 Les résultats ci-dessous comprennent la suite Playwright complète exécutée après l'implémentation de
 la phase 2 et la correction du conflit d'inscription du compte administrateur partagé.
@@ -61,6 +61,12 @@ serveur sont donc ceux de l'environnement de test, pas une instance de productio
   tableaux de bord élève/professeur.
 - Collaboration WebSocket avec journal ordonné, rôles lecture/écriture, présence, curseurs, chat,
   ticks d'horloge et sauvegarde ; partage de projet par lien.
+- Network Incident : scénarios de dépannage à partir d'une topologie initiale et d'une solution de
+  référence, correction par critères et attribution possible dans un devoir.
+- Compétences réseau associables aux critères visibles ; progression élève calculée sur les meilleurs
+  résultats publiés. Points et badges personnels sont calculés sans classement public.
+- Bibliothèque communautaire : partage explicite par un enseignant, file de modération super-admin,
+  catalogue public des ressources approuvées et ouverture des projets comme modèles locaux.
 - TPacket Tutor : diagnostic déterministe disponible dans le simulateur et IA facultative, désactivée
   sans configuration serveur et contrôlée selon les règles du devoir.
 - Éditeur visuel de critères avec essai local ; publication bloquée si la solution de référence
@@ -70,9 +76,8 @@ serveur sont donc ceux de l'environnement de test, pas une instance de productio
 ## Ce qui reste à développer
 Voir `ROADMAP.md` pour le plan détaillé. Principaux manques :
 - **Contenu pédagogique livré : 0 module, 0 cours, 0 exercice et 0 quiz** (objectif : 11 / 35 / 60 / 150).
-- Cours, quiz, glossaire, calculateur de sous-réseaux, compétences, gamification, bibliothèque,
-  groupes et import CSV d'élèves.
-- Activity Wizard, variantes d'exercices à graine et Network Incident.
+- Cours, quiz, glossaire, calculateur de sous-réseaux, groupes et import CSV d'élèves.
+- Activity Wizard et variantes d'exercices à graine.
 - Fonctions d'identité avancées : vérification/réinitialisation par e-mail, 2FA, OIDC et LTI ;
   interfaces d'administration détaillées.
 - Les mises à jour RIP et les messages Hello/LSA OSPFv2/v3 sont livrés sur L2 avec des minuteries
@@ -87,6 +92,9 @@ Voir `ROADMAP.md` pour le plan détaillé. Principaux manques :
   sont actifs et le contrôle de santé a répondu 200.
 - La migration 0002 a été vérifiée montée/descendue/remontée sur SQLite puis appliquée avec succès
   sur le PostgreSQL du serveur (`0002`, tête Alembic).
+- La migration 0003 et les tests API/web de la phase 6 n'ont pas pu être lancés sur la machine de
+  développement : Python, Node.js et npm ne sont pas disponibles. Le diagnostic TypeScript de VS Code
+  ne signale pas d'erreur sur les écrans modifiés.
 - Le serveur est actuellement servi en HTTP sur le réseau local, sans TLS. Ne pas l'exposer à
   Internet avant d'ajouter un terminateur TLS et de configurer `NETLAB_COOKIE_SECURE=true`.
 - Limitation de débit en mémoire de processus (une seule instance d'API) ; Redis prévu.

@@ -12,6 +12,7 @@ from ..deps import STAFF, current_user, membership, require_role
 from ..grading.runner import run_grader, student_view
 from ..models import AuditLog, Exercise, ExerciseVersion, GradingJob, GradingResult, Role, Submission, SubmissionSnapshot, User
 from ..schemas import ExerciseIn, ExerciseVersionIn, SubmissionIn
+from ..skills import SKILL_CODES
 
 router = APIRouter(prefix="/api", tags=["exercises"])
 
@@ -36,6 +37,12 @@ def _validate_rubric(r: dict) -> None:
         ids.add(c["id"])
 
 
+def _validate_skill_map(skill_map: dict[str, str], rubric: dict) -> None:
+    visible_ids = {c["id"] for c in rubric["criteria"] if not c.get("hidden")}
+    if any(criterion_id not in visible_ids or skill_id not in SKILL_CODES for criterion_id, skill_id in skill_map.items()):
+        raise HTTPException(422, "invalid_skill_map")
+
+
 @router.post("/orgs/{org_id}/exercises", status_code=201)
 def create_exercise(org_id: str, body: ExerciseIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
     require_role(db, u, org_id, *STAFF)
@@ -56,7 +63,7 @@ def list_exercises(org_id: str, u: User = Depends(current_user), db: Session = D
             q = q.where(ExerciseVersion.published.is_(True))
         latest = db.scalars(q.order_by(ExerciseVersion.version.desc())).first()
         if latest or staff:
-            out.append({"id": e.id, "title": e.title, "latest_version_id": latest.id if latest else None, "version": latest.version if latest else None, "published": latest.published if latest else False})
+            out.append({"id": e.id, "title": e.title, "latest_version_id": latest.id if latest else None, "version": latest.version if latest else None, "published": latest.published if latest else False, "kind": latest.kind if latest else "exercise"})
     return out
 
 
@@ -67,8 +74,9 @@ def add_version(eid: str, body: ExerciseVersionIn, u: User = Depends(current_use
         raise HTTPException(404, "not_found")
     require_role(db, u, e.org_id, *STAFF)
     _validate_rubric(body.rubric)
+    _validate_skill_map(body.skill_map, body.rubric)
     n = (db.scalar(select(func.max(ExerciseVersion.version)).where(ExerciseVersion.exercise_id == eid)) or 0) + 1
-    v = ExerciseVersion(exercise_id=eid, version=n, statement=body.statement, initial_project=body.initial_project, rubric=body.rubric,
+    v = ExerciseVersion(exercise_id=eid, version=n, statement=body.statement, initial_project=body.initial_project, kind=body.kind, rubric=body.rubric, skill_map=body.skill_map,
                         show_hidden_after_grading=body.show_hidden_after_grading, published=body.publish)
     db.add(v)
     db.add(AuditLog(org_id=e.org_id, actor_id=u.id, action="exercise.version", target=eid, data={"version": n}))
@@ -92,7 +100,7 @@ def _version_for(db: Session, u: User, vid: str) -> tuple[ExerciseVersion, Exerc
 def get_version(vid: str, u: User = Depends(current_user), db: Session = Depends(get_db)):
     v, e, staff = _version_for(db, u, vid)
     out = {"id": v.id, "exercise_id": e.id, "title": e.title, "version": v.version, "statement": v.statement,
-           "initial_project": v.initial_project, "published": v.published}
+           "initial_project": v.initial_project, "published": v.published, "kind": v.kind, "skill_map": v.skill_map}
     if staff:
         out["rubric"] = v.rubric
     else:

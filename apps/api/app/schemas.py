@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -101,6 +101,8 @@ class ExerciseVersionIn(BaseModel):
     statement: str = Field(max_length=100_000)
     initial_project: dict[str, Any]
     rubric: dict[str, Any]
+    kind: Literal["exercise", "incident"] = "exercise"
+    skill_map: dict[str, str] = Field(default_factory=dict)
     show_hidden_after_grading: bool = False
     publish: bool = False
     _v = field_validator("initial_project")(_check_project)

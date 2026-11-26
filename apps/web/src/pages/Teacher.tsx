@@ -17,8 +17,8 @@ interface Dashboard {
 }
 interface OrgOption { id: string; name: string; slug: string }
 interface ClassRow { id: string; name: string; academic_year: string; archived: boolean }
-interface Exercise { id: string; title: string; latest_version_id: string | null; version: number | null; published: boolean }
-interface AssignmentRow { id: string; title: string; due_at: string | null; exam: boolean; duration_min: number | null; max_attempts: number; results: string; max_score: number | null }
+interface Exercise { id: string; title: string; latest_version_id: string | null; version: number | null; published: boolean; kind?: 'exercise' | 'incident' }
+interface AssignmentRow { id: string; title: string; due_at: string | null; exam: boolean; duration_min: number | null; max_attempts: number; results: string; max_score: number | null; kind?: 'exercise' | 'incident' }
 interface ClassDetail { id: string; name: string; academic_year: string; members: { user_id: string; display_name: string; email?: string; role: string }[]; assignments: AssignmentRow[]; announcements: { id: string; text: string; created_at: string }[] }
 interface SubRow { student_id: string; display_name: string; attempts: number; submission_id: string | null; submitted_at: string | null; score: number | null; max_score: number | null; session_events: number; late: boolean; failed: string[] }
 
@@ -140,7 +140,7 @@ function ClassView({ cid, exercises, onBack }: { cid: string; exercises: Exercis
         <table className="mb-3 w-full text-[12px]">
           <tbody>{c.assignments.map((a) => (
             <tr key={a.id} className="border-t border-line">
-              <td className="py-1"><button className="font-medium text-accent" onClick={() => setSel(a)}>{a.title}</button></td>
+              <td className="py-1"><button className="font-medium text-accent" onClick={() => setSel(a)}>{a.title}</button>{a.kind === 'incident' && <span className="ml-2 rounded bg-warn/15 px-1.5 py-0.5 text-[10px] text-warn">{t('community.incident')}</span>}</td>
               <td>{a.exam ? `${t('asg.exam')} · ${a.duration_min ?? '—'} min` : t('asg.assignment')}</td>
               <td className="text-muted">{a.due_at ? new Date(a.due_at).toLocaleString() : ''}</td>
               <td className="text-muted">{a.max_attempts ? `${a.max_attempts} ${t('teacher.attempts')}` : '∞'}</td>
@@ -150,7 +150,7 @@ function ClassView({ cid, exercises, onBack }: { cid: string; exercises: Exercis
         <form className="grid grid-cols-4 gap-2 text-[12px]" onSubmit={create}>
           <select required className={input} value={form.exercise_version_id} onChange={(e) => { const ex = exercises.find((x) => x.latest_version_id === e.target.value); setForm({ ...form, exercise_version_id: e.target.value, title: form.title || ex?.title || '' }); }}>
             <option value="">{t('teacher.chooseExercise')}</option>
-            {exercises.filter((x) => x.published).map((x) => <option key={x.id} value={x.latest_version_id!}>{x.title} (v{x.version})</option>)}
+            {exercises.filter((x) => x.published).map((x) => <option key={x.id} value={x.latest_version_id!}>{x.kind === 'incident' ? `${t('community.incident')}: ` : ''}{x.title} (v{x.version})</option>)}
           </select>
           <input required className={input} placeholder={t('ex.name')} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           <label className="flex items-center gap-1">{t('teacher.due')}<input type="datetime-local" className={input} value={form.due_at} onChange={(e) => setForm({ ...form, due_at: e.target.value })} /></label>

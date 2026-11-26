@@ -147,7 +147,7 @@ def assignment_out(db: Session, a: Assignment, student_id: str | None) -> dict:
         "id": a.id, "class_id": a.class_id, "title": a.title, "exercise_version_id": a.exercise_version_id,
         "opens_at": a.opens_at, "due_at": a.due_at, "exam": a.exam, "duration_min": a.duration_min, "max_attempts": a.max_attempts,
         "allow_checks": a.allow_checks, "allow_tutor": a.allow_tutor, "allow_courses": a.allow_courses, "results": a.results,
-        "max_score": v.rubric.get("maxScore") if v else None,
+        "max_score": v.rubric.get("maxScore") if v else None, "kind": v.kind if v else "exercise",
     }
     if student_id:
         subs = db.scalars(select(Submission).where(Submission.assignment_id == a.id, Submission.student_id == student_id).order_by(Submission.created_at)).all()
@@ -275,6 +275,7 @@ def get_assignment(aid: str, u: User = Depends(current_user), db: Session = Depe
     out = assignment_out(db, a, None if staff else u.id)
     out["statement"] = v.statement
     out["initial_project"] = v.initial_project
+    out["skill_map"] = v.skill_map
     out["criteria"] = [{"id": c["id"], "type": c["type"], "points": c["points"]} for c in v.rubric["criteria"] if not c.get("hidden")]
     out["server_time"] = now()
     return out

@@ -36,11 +36,12 @@ const FIELDS: Record<string, Field[]> = {
 };
 
 type Row = Record<string, string | number | boolean | string[] | undefined> & { id: string; type: string; points: number };
+type Skill = { id: string; fr: string; en: string };
 
 function toCriterion(r: Row): Criterion {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(r)) {
-    if (v === '' || v === undefined || (k === 'via' && v === 'any')) continue;
+    if (v === '' || v === undefined || k === 'skill' || (k === 'via' && v === 'any')) continue;
     out[k] = ['vlan', 'min', 'max', 'points'].includes(k) ? Number(v) : v;
   }
   return out as unknown as Criterion;
@@ -49,6 +50,7 @@ function toCriterion(r: Row): Criterion {
 export function ExerciseEditor({ project, onClose }: { project: string; onClose(): void }) {
   const t = useT();
   const me = useUi((s) => s.me);
+  const locale = useUi((s) => s.locale);
   const toast = useUi((s) => s.toast);
   const view = useSim((s) => s.views[project]);
   const orgs = (me?.memberships ?? []).filter((m) => m.role !== 'student');
@@ -57,14 +59,28 @@ export function ExerciseEditor({ project, onClose }: { project: string; onClose(
   const [statement, setStatement] = useState('');
   const [maxScore, setMaxScore] = useState(20);
   const [rows, setRows] = useState<Row[]>([{ id: 'c1', type: 'connectivity_test', points: 5, expected: 'success' }]);
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillLoadError, setSkillLoadError] = useState(false);
   const [initial, setInitial] = useState<string>('');
+  const [kind, setKind] = useState<'exercise' | 'incident'>('exercise');
+  const [shareCommunity, setShareCommunity] = useState(false);
   const [projects, setProjects] = useState<StoredProject[]>([]);
   const [report, setReport] = useState<GradeReport | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => void storage.list().then(setProjects), []);
+  useEffect(() => {
+    let cancelled = false;
+    void api<Skill[]>('GET', '/skills').then((items) => {
+      if (!cancelled) setSkills(items);
+    }).catch(() => {
+      if (!cancelled) setSkillLoadError(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
   const devices = view?.devices.map((d) => d.name) ?? [];
   const rubric = { title, maxScore, criteria: rows.map(toCriterion) };
   const total = rows.filter((r) => !r.bonus && !r.penalty).reduce((s, r) => s + Number(r.points), 0);
+  const incidentReady = kind !== 'incident' || (!!initial && initial !== project);
   const input = 'rounded border border-line bg-panel2 px-2 py-1 outline-none focus:border-accent';
   const set = (i: number, k: string, v: Row[string]) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
 
@@ -81,8 +97,23 @@ export function ExerciseEditor({ project, onClose }: { project: string; onClose(
       if (rep.score < maxScore) return toast(t('ex.notFeasible'), 'error');
       const init = initial ? (await storage.get(initial))?.doc : await sim.serialize(project);
       const ex = await api<{ id: string }>('POST', `/orgs/${org}/exercises`, { title });
-      await api('POST', `/exercises/${ex.id}/versions`, { statement, initial_project: init, rubric, publish: true });
+      const version = await api<{ id: string }>('POST', `/exercises/${ex.id}/versions`, {
+        statement,
+        initial_project: init,
+        rubric,
+        kind,
+        skill_map: Object.fromEntries(rows.filter((r) => typeof r.skill === 'string' && r.skill).map((r) => [r.id, r.skill])),
+        publish: true,
+      });
       toast(t('ex.published'));
+      if (shareCommunity) {
+        try {
+          await api('POST', '/community', { exercise_version_id: version.id });
+          toast(t('community.queued'));
+        } catch {
+          toast(t('community.submitError'), 'error');
+        }
+      }
       onClose();
     } catch (e) {
       toast((e as Error).message, 'error');
@@ -107,10 +138,26 @@ export function ExerciseEditor({ project, onClose }: { project: string; onClose(
             <label className="flex flex-col gap-0.5"><span className="text-muted">{t('ex.name')}</span><input className={input} value={title} onChange={(e) => setTitle(e.target.value)} /></label>
             <label className="flex flex-col gap-0.5"><span className="text-muted">{t('ex.initial')}</span>
               <select className={input} value={initial} onChange={(e) => setInitial(e.target.value)}>
-                <option value="">{t('ex.initialSame')}</option>
-                {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                <option value="" disabled={kind === 'incident'}>{t('ex.initialSame')}</option>
+                {projects.map((p) => <option key={p.id} value={p.id} disabled={kind === 'incident' && p.id === project}>{p.name}</option>)}
               </select></label>
           </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-[12px]">
+            <label className="flex items-center gap-1">
+              <input type="checkbox" checked={kind === 'incident'} onChange={(e) => setKind(e.target.checked ? 'incident' : 'exercise')} />
+              {t('ex.incident')}
+            </label>
+            <label className="flex items-center gap-1">
+              <input type="checkbox" checked={shareCommunity} onChange={(e) => setShareCommunity(e.target.checked)} />
+              {t('community.share')}
+            </label>
+          </div>
+          {kind === 'incident' && <>
+            <p className="text-[11px] text-muted">{t('ex.incidentHelp')}</p>
+            {!incidentReady && <p className="text-[11px] text-warn">{t('ex.incidentNeedStart')}</p>}
+          </>}
+          {shareCommunity && <p className="text-[11px] text-warn">{t('community.shareWarning')}</p>}
+          {skillLoadError && <p className="text-[11px] text-bad" role="alert">{t('community.skillsError')}</p>}
           <label className="flex flex-col gap-0.5"><span className="text-muted">{t('ex.statement')}</span><textarea className={`${input} h-28`} value={statement} onChange={(e) => setStatement(e.target.value)} placeholder={t('ex.statementPh')} /></label>
           <div className="flex items-center gap-3">
             <h3 className="font-semibold">{t('ex.criteria')}</h3>
@@ -118,12 +165,12 @@ export function ExerciseEditor({ project, onClose }: { project: string; onClose(
             <span className={total === maxScore ? 'text-ok' : 'text-warn'}>{t('ex.total', { n: total })}</span>
           </div>
           <table className="w-full">
-            <thead className="text-left text-muted"><tr><th>{t('ex.id')}</th><th>{t('ex.type')}</th><th>{t('ex.params')}</th><th>{t('ex.points')}</th><th>{t('ex.flags')}</th><th /></tr></thead>
+            <thead className="text-left text-muted"><tr><th>{t('ex.id')}</th><th>{t('ex.type')}</th><th>{t('ex.params')}</th><th>{t('ex.skill')}</th><th>{t('ex.points')}</th><th>{t('ex.flags')}</th><th /></tr></thead>
             <tbody>
               {rows.map((r, i) => (
                 <tr key={i} className="border-t border-line align-top">
                   <td className="py-1 pr-1"><input className={`${input} w-20`} value={r.id} onChange={(e) => set(i, 'id', e.target.value)} /></td>
-                  <td className="py-1 pr-1"><select className={input} value={r.type} onChange={(e) => setRows((rs) => rs.map((x, j) => (j === i ? { id: x.id, type: e.target.value, points: x.points } : x)))}>
+                  <td className="py-1 pr-1"><select className={input} value={r.type} onChange={(e) => setRows((rs) => rs.map((x, j) => (j === i ? { id: x.id, type: e.target.value, points: x.points, skill: x.skill } : x)))}>
                     {CRITERION_TYPES.map((ty) => <option key={ty} value={ty}>{t(`crit.${ty}`)}</option>)}</select></td>
                   <td className="py-1 pr-1"><div className="flex flex-wrap gap-1">
                     {(FIELDS[r.type] ?? []).map((f) => f.kind === 'select' ? (
@@ -132,6 +179,10 @@ export function ExerciseEditor({ project, onClose }: { project: string; onClose(
                       <input key={f.key} aria-label={f.key} placeholder={t(`ex.f.${f.key}`)} list={f.kind === 'device' ? 'ex-devices' : undefined} type={f.kind === 'number' ? 'number' : 'text'} className={`${input} w-32`} value={String(r[f.key] ?? '')} onChange={(e) => set(i, f.key, e.target.value)} />
                     ))}
                   </div></td>
+                  <td className="py-1 pr-1"><select className={`${input} max-w-36`} aria-label={t('ex.skill')} value={String(r.skill ?? '')} onChange={(e) => set(i, 'skill', e.target.value)}>
+                    <option value="">{t('ex.noSkill')}</option>
+                    {skills.map((skill) => <option key={skill.id} value={skill.id}>{skill[locale]}</option>)}
+                  </select></td>
                   <td className="py-1 pr-1"><input type="number" className={`${input} w-14`} value={r.points} min={0} onChange={(e) => set(i, 'points', Number(e.target.value))} /></td>
                   <td className="py-1 pr-1"><div className="flex flex-col">
                     {(['required', 'hidden', 'bonus', 'penalty'] as const).map((k) => <label key={k} className="flex items-center gap-1"><input type="checkbox" checked={!!r[k]} onChange={(e) => set(i, k, e.target.checked)} />{t(`ex.${k}`)}</label>)}
@@ -151,7 +202,7 @@ export function ExerciseEditor({ project, onClose }: { project: string; onClose(
           )}
           <div className="flex gap-2">
             <button className="rounded border border-line px-3 py-1" onClick={() => void test()}>{t('ex.test')}</button>
-            <button disabled={busy || !org || !title} className="rounded bg-accent px-3 py-1 text-white disabled:opacity-40" onClick={() => void publish()}>{t('ex.publish')}</button>
+            <button disabled={busy || !org || !title || !incidentReady} className="rounded bg-accent px-3 py-1 text-white disabled:opacity-40" onClick={() => void publish()}>{t('ex.publish')}</button>
           </div>
         </Dialog.Content>
       </Dialog.Portal>

@@ -8,6 +8,7 @@ const items: { page: Page; label: string }[] = [
   { page: 'student', label: 'academy.activities' },
   { page: 'courses', label: 'academy.courses' },
   { page: 'exercises', label: 'academy.exercises' },
+  { page: 'community', label: 'community.title' },
   { page: 'profile', label: 'academy.profile' },
 ];
 

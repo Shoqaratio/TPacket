@@ -127,8 +127,10 @@ class ExerciseVersion(Base):
     version: Mapped[int] = mapped_column(Integer)
     statement: Mapped[str] = mapped_column(Text)
     initial_project: Mapped[dict] = mapped_column(JsonType)
+    kind: Mapped[str] = mapped_column(String(16), default="exercise")  # exercise | incident
     # Never sent to students (contains hidden tests).
     rubric: Mapped[dict] = mapped_column(JsonType)
+    skill_map: Mapped[dict] = mapped_column(JsonType, default=dict)
     show_hidden_after_grading: Mapped[bool] = mapped_column(Boolean, default=False)
     published: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -298,3 +300,15 @@ class ProjectShare(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     role: Mapped[str] = mapped_column(String(8))  # read | write
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class CommunityPublication(Base):
+    __tablename__ = "community_publications"
+    __table_args__ = (UniqueConstraint("exercise_version_id"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    exercise_version_id: Mapped[str] = mapped_column(ForeignKey("exercise_versions.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending | approved | rejected
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

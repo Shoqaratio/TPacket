@@ -8,6 +8,7 @@ import { Workspace } from './components/Workspace';
 import './index.css';
 import { Home } from './pages/Home';
 import { CoursesPage, ExercisesPage, ProfilePage } from './pages/Academy';
+import { CommunityPage } from './pages/Community';
 import { StudentPage } from './pages/Student';
 import { TeacherPage } from './pages/Teacher';
 import { restoreAssignment } from './assignment';
@@ -122,6 +123,7 @@ function App() {
     : page === 'student' ? <StudentPage />
     : page === 'courses' ? <CoursesPage />
     : page === 'exercises' ? <ExercisesPage />
+    : page === 'community' ? <CommunityPage />
     : page === 'profile' ? <ProfilePage />
     : <Home />;
 

@@ -69,15 +69,24 @@ périodiques. Les routes restent calculées à l'état convergé, plutôt que d'
 ## Phase 6 — Fonctionnalités avancées 🟡
 - ✅ Collaboration WebSocket : opérations ordonnées rejouées par le moteur local, partage, rôles,
   présence, chat, curseurs, ticks et sauvegarde. Les salons sont en mémoire du processus ; le
-  fonctionnement de l'horloge en interface reste à confirmer.
+  tick serveur est appliqué au worker et affiché par l'horloge de l'espace de travail ; le contrôle
+  navigateur de bout en bout reste à faire.
 - ✅ Mode devoir/examen : fenêtre et durée, tentatives, temps supplémentaire, soumission, et
   signalement d'onglet. Les événements ne sont conservés que si l'établissement active le suivi ;
   ils sont informatifs, pas une preuve de fraude.
 - ✅ TPacket Tutor : diagnostic local déterministe et intégration IA facultative, désactivée par défaut.
-- ⬜ Network Incident, compétences, gamification et bibliothèque communautaire.
+- 🟡 Network Incident : scénarios de dépannage créés depuis un projet de départ en panne, évalués
+  par des critères de correction et attribuables comme devoirs.
+- 🟡 Compétences : catalogue réseau associé aux critères visibles ; progression calculée à partir
+  des meilleurs résultats publiés, sans utiliser les critères cachés.
+- 🟡 Gamification : points et badges personnels dérivés des résultats visibles ; aucun classement
+  public ni donnée de progression partagée entre élèves.
+- 🟡 Bibliothèque communautaire : proposition explicite d'exercices publiés, validation super-admin
+  avant visibilité publique et ouverture d'un modèle en projet local.
+  Les validations automatisées de ce bloc restent à exécuter dans un environnement avec Python et Node.
 
 ## Phase 7 — Finalisation ⬜
 Contenu pédagogique complet (11 modules, 35 cours, 60 exercices, 150 questions, 20 scénarios,
 5 examens, 10 projets, glossaire de 100 termes) : **aucun contenu de cours, exercice ou quiz n'est
 encore livré**. Restent aussi la comparaison avec Packet Tracer, audit de sécurité, benchmarks
-(100 / 500 équipements), documentation, validation PostgreSQL de la migration 0002 et déploiement.
+(100 / 500 équipements), documentation, validation PostgreSQL de la migration 0003 et déploiement.

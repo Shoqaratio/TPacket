@@ -10,6 +10,7 @@ import { useUi } from '../store';
 interface Exercise {
   id: string;
   title: string;
+  kind?: 'exercise' | 'incident';
   latest_version_id: string | null;
   version: number | null;
   published: boolean;
@@ -148,7 +149,7 @@ export function ExercisesPage() {
                 <div className="flex items-start gap-3">
                   <Dumbbell size={18} className="mt-0.5 shrink-0 text-accent" />
                   <div className="min-w-0 flex-1">
-                    <h2 className="font-semibold">{exercise.title}</h2>
+                    <h2 className="font-semibold">{exercise.title}{exercise.kind === 'incident' && <span className="ml-2 rounded bg-warn/15 px-1.5 py-0.5 text-[10px] text-warn">{t('community.incident')}</span>}</h2>
                     <p className="mt-1 text-[11px] text-muted">{exercise.orgName} · {exercise.version ? `v${exercise.version}` : t('academy.noVersion')}</p>
                     {exercise.summary && <p className="mt-2 text-[12px] text-muted">{exercise.summary}</p>}
                     {exercise.statement && (

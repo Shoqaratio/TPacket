@@ -97,12 +97,15 @@ Chaque modification déclenche une sauvegarde IndexedDB (600 ms), puis une synch
 (30 dernières), `exercises`, `exercise_versions` (énoncé, projet initial, barème secret),
 `submissions`, `submission_snapshots`, `grading_jobs`, `grading_results`, `audit_logs`,
 `classes`, `class_members`, `assignments`, `assignment_extensions`, `assignment_starts`,
-`exam_events`, `grade_history`, `announcements` et `project_shares`. Ces dernières tables couvrent
-classes, devoirs/examens, événements facultatifs, historique de notes et accès collaboratif ; elles
-ne constituent pas encore un système complet de cours/quiz.
+`exam_events`, `grade_history`, `announcements`, `project_shares` et `community_publications`.
+Les versions d'exercice distinguent les incidents réseau et conservent une association critères-compétences.
+Les compétences sont un catalogue applicatif ; points et badges sont dérivés des résultats visibles,
+pas stockés comme classement. Les publications communautaires restent invisibles jusqu'à validation
+super-admin. Ces fonctions ne constituent pas encore un système complet de cours/quiz.
 
 Isolation : toute ressource d'établissement est filtrée par appartenance ; un non-membre reçoit
 **404** (et non 403) pour ne pas révéler l'existence d'une ressource. La collaboration ordonne les
 opérations côté serveur, mais les salons et leur journal restent en mémoire d'un processus ; chaque
-participant rejoue les opérations dans son moteur déterministe local. Les cours, quiz, compétences,
-badges et incidents restent planifiés dans `ROADMAP.md`.
+participant rejoue les opérations dans son moteur déterministe local. Les ticks serveur font avancer
+le worker de chaque participant ; l'horloge affichée utilise le temps du worker. Les cours et quiz
+restent planifiés dans `ROADMAP.md`.

@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../api';
 import { openAssignment } from '../assignment';
+import { LearningProgress } from '../components/LearningProgress';
 import { useT } from '../i18n';
 import { useUi } from '../store';
 
@@ -15,6 +16,7 @@ interface Item {
   duration_min: number | null;
   attempts: number;
   max_attempts: number;
+  kind: 'exercise' | 'incident';
   score?: number | null;
   max_score: number | null;
   submissions: string[];
@@ -53,7 +55,7 @@ export function StudentPage() {
             <tbody>
               {data?.assignments.map((a) => (
                 <tr key={a.id} className="border-t border-line">
-                  <td className="py-2"><b>{a.title}</b><div className="text-[11px] text-muted">{a.class_name}{a.exam ? ` · ${t('asg.exam')} ${a.duration_min} min` : ''}</div></td>
+                  <td className="py-2"><b>{a.title}</b>{a.kind === 'incident' && <span className="ml-2 rounded bg-warn/15 px-1.5 py-0.5 text-[10px] text-warn">{t('community.incident')}</span>}<div className="text-[11px] text-muted">{a.class_name}{a.exam ? ` · ${t('asg.exam')} ${a.duration_min} min` : ''}</div></td>
                   <td className="text-[12px] text-muted">{a.deadline ? new Date(a.deadline).toLocaleString() : a.due_at ? new Date(a.due_at).toLocaleString() : ''}</td>
                   <td className="text-[12px]">{a.attempts ? `${t('student.submitted')} (${a.attempts}${a.max_attempts ? `/${a.max_attempts}` : ''})` : t('student.todo')}</td>
                   <td className="font-semibold">{a.score !== undefined && a.score !== null ? `${a.score}/${a.max_score}` : ''}</td>
@@ -82,6 +84,7 @@ export function StudentPage() {
         <aside className={card}>
           <h2 className="mb-2 font-semibold">{t('teacher.announcements')}</h2>
           <ul className="text-[12px]">{data?.announcements.map((a, i) => <li key={i} className="border-t border-line py-1">{a.text}</li>)}</ul>
+          <div className="mt-4 flex flex-col gap-3"><LearningProgress /></div>
         </aside>
       </main>
     </div>
