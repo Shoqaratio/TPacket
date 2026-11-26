@@ -367,6 +367,7 @@ export function Canvas({ project }: { project: string }) {
             onPaneContextMenu={() => setCtx(null)}
             snapToGrid={snap}
             snapGrid={[20, 20]}
+            autoPanOnNodeDrag={false}
             deleteKeyCode={null}
             selectionKeyCode="Shift"
             multiSelectionKeyCode={['Meta', 'Control']}

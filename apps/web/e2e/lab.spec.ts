@@ -90,6 +90,41 @@ test('keeps other devices visible while dragging a switch and after dropping it'
   expect(await Promise.all([nodes.nth(1).boundingBox(), nodes.nth(2).boundingBox()])).toEqual(stationary);
 });
 
+test('keeps the canvas still during a slow drag near its edge', async ({ page }) => {
+  await registerAndSignIn(page, 'edge-drag');
+  await page.getByRole('button', { name: 'Nouveau projet' }).click();
+  await drop(page, '2960-24TT', 560, 200);
+  await drop(page, 'PC', 420, 380);
+
+  const nodes = page.locator('.react-flow__node-device');
+  await expect(nodes).toHaveCount(2);
+  await expect(nodes.first()).toBeVisible();
+  await expect(nodes.last()).toBeVisible();
+  const start = (await nodes.first().boundingBox())!;
+  const pane = (await page.locator('.react-flow__pane').boundingBox())!;
+  const viewport = page.locator('.react-flow__viewport');
+  const transform = await viewport.evaluate((element) => getComputedStyle(element).transform);
+  const x = start.x + start.width / 2;
+  const y = start.y + start.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  try {
+    await page.mouse.move(pane.x + pane.width - 18, y, { steps: 12 });
+    for (let offset = 18; offset > 6; offset--) {
+      await page.mouse.move(pane.x + pane.width - offset, y);
+      expect(await viewport.evaluate((element) => getComputedStyle(element).transform)).toBe(transform);
+      await expect(nodes.last()).toBeVisible();
+    }
+  } finally {
+    await page.mouse.up();
+  }
+  const clock = page.getByRole('status').locator('.font-mono');
+  await expect(clock).not.toHaveText((await clock.textContent())!);
+  await expect(viewport).toHaveCSS('transform', transform);
+  await expect(nodes.last()).toBeInViewport();
+  expect((await nodes.first().boundingBox())!.x).toBeGreaterThan(start.x + 50);
+});
+
 test('build a LAN, configure it from the GUI and the CLI, and ping for real', async ({ page }) => {
   await registerAndSignIn(page, 'lab');
   await page.getByRole('button', { name: 'Nouveau projet' }).click();
