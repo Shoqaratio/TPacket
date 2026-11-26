@@ -73,6 +73,7 @@ export function Terminal({ project, device, kind, session, autoFocus }: Props) {
       let i = PAGE;
       while (i < lines.length) {
         write('\n --More-- ');
+        term.focus();
         const k = await nextKey();
         write('\r          \r');
         if (k === ' ') {
