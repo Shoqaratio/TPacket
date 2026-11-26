@@ -1,8 +1,7 @@
 import { BookOpen, Dumbbell, UserRound } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api';
 import { AcademyPageHeader } from '../components/AcademyNav';
-import { localizedText, starterCourses, starterExercises } from '../content/starterCurriculum';
 import { useT } from '../i18n';
 import { createLocalProject } from '../projects';
 import { useUi } from '../store';
@@ -15,9 +14,6 @@ interface Exercise {
   version: number | null;
   published: boolean;
   orgName: string;
-  summary?: string;
-  statement?: string;
-  initialProject?: unknown;
 }
 
 interface ExerciseVersion {
@@ -50,13 +46,64 @@ interface CourseOrg {
 const card = 'rounded-lg border border-line bg-panel p-4';
 const input = 'rounded border border-line bg-panel2 px-2 py-1 outline-none focus:border-accent';
 
+function CourseReader({ course, onBack }: { course: Course; onBack: () => void }) {
+  const t = useT();
+  const [index, setIndex] = useState(0);
+  const lessonHeading = useRef<HTMLHeadingElement>(null);
+  const lesson = course.lessons[index];
+  const showLesson = (next: number) => {
+    setIndex(next);
+    lessonHeading.current?.focus();
+  };
+
+  return (
+    <div className="nl-scroll h-full overflow-auto">
+      <AcademyPageHeader title={course.title} />
+      <main className="mx-auto max-w-6xl p-6">
+        <button type="button" className="mb-4 text-accent hover:underline" onClick={onBack}>{t('academy.backToCourses')}</button>
+        <div className={`${card} mb-4`}>
+          <p className="text-[12px] text-muted">{course.orgName} · {course.duration_minutes} {t('academy.minutes')}</p>
+          <p className="mt-2 whitespace-pre-wrap">{course.summary}</p>
+          <h2 className="mt-3 font-semibold">{t('academy.courseObjectives')}</h2>
+          <ul className="list-disc pl-5">{course.objectives.map((objective, i) => <li key={i}>{objective}</li>)}</ul>
+        </div>
+        <div className="grid gap-4 md:grid-cols-[16rem_minmax(0,1fr)]">
+          <nav aria-label={t('academy.courseLessons')} className={`${card} self-start`}>
+            <h2 className="mb-2 font-semibold">{t('academy.courseLessons')}</h2>
+            <ol className="space-y-1">
+              {course.lessons.map((item, i) => (
+                <li key={i}>
+                  <button type="button" aria-current={index === i ? 'step' : undefined} className="w-full break-words rounded px-2 py-1.5 text-left hover:bg-panel2 aria-[current=step]:bg-accent/15 aria-[current=step]:text-accent" onClick={() => showLesson(i)}>
+                    {i + 1}. {item.title}
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </nav>
+          {lesson && (
+            <article className={card}>
+              <h2 ref={lessonHeading} tabIndex={-1} className="break-words text-lg font-semibold" aria-live="polite">{index + 1}. {lesson.title}</h2>
+              <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed">{lesson.body}</p>
+              {lesson.takeaway && <p className="mt-4 whitespace-pre-wrap break-words rounded bg-panel2 p-3"><strong>{t('academy.takeaway')}</strong> · {lesson.takeaway}</p>}
+              <div className="mt-4 flex flex-wrap justify-between gap-2 border-t border-line pt-3">
+                <button type="button" className={`${input} disabled:opacity-40`} disabled={index === 0} onClick={() => showLesson(index - 1)}>{t('academy.previousLesson')}</button>
+                <button type="button" className={`${input} disabled:opacity-40`} disabled={index === course.lessons.length - 1} onClick={() => showLesson(index + 1)}>{t('academy.nextLesson')}</button>
+              </div>
+            </article>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
 export function CoursesPage() {
   const t = useT();
-  const locale = useUi((s) => s.locale);
   const me = useUi((s) => s.me);
   const toast = useUi((s) => s.toast);
   const [orgs, setOrgs] = useState<CourseOrg[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [coursesError, setCoursesError] = useState(false);
   const [orgId, setOrgId] = useState('');
@@ -142,11 +189,13 @@ export function CoursesPage() {
     setLessons((current) => current.map((lesson, i) => i === index ? { ...lesson, [field]: value } : lesson));
   };
 
+  const selectedCourse = courses.find((course) => course.id === selectedCourseId);
+  if (selectedCourse) return <CourseReader key={selectedCourse.id} course={selectedCourse} onBack={() => setSelectedCourseId(null)} />;
+
   return (
     <div className="nl-scroll h-full overflow-auto">
       <AcademyPageHeader title={t('academy.courses')} />
       <main className="mx-auto max-w-6xl p-6">
-        <p className="mb-4 text-[12px] text-muted">{t('academy.starterCoursesDescription')}</p>
         {writableOrgs.length > 0 && (
           <section className={`${card} mb-4`}>
             <h2 className="mb-3 font-semibold">{t('academy.createCourse')}</h2>
@@ -202,59 +251,21 @@ export function CoursesPage() {
             <div className="grid gap-4 lg:grid-cols-2">
               {courses.map((course) => (
                 <article key={course.id} className={card}>
-                  <h3 className="font-semibold">{course.title}</h3>
+                  <h3 className="font-semibold">
+                    <button type="button" className="flex w-full items-center gap-2 text-left text-accent hover:underline" onClick={() => setSelectedCourseId(course.id)}>
+                      <BookOpen size={18} className="shrink-0" />
+                      {course.title}
+                    </button>
+                  </h3>
                   <p className="mt-1 text-[11px] text-muted">{course.orgName} · {course.duration_minutes} {t('academy.minutes')}</p>
                   <p className="mt-2 text-[12px] text-muted">{course.summary}</p>
-                  <details className="mt-3 border-t border-line pt-3">
-                    <summary className="cursor-pointer text-[12px] font-medium text-accent">{t('academy.courseContents')}</summary>
-                    <div className="mt-3">
-                      <h4 className="text-[12px] font-medium">{t('academy.courseObjectives')}</h4>
-                      <ul className="mb-3 list-disc pl-5 text-[12px]">{course.objectives.map((objective, index) => <li key={`${course.id}-objective-${index}`}>{objective}</li>)}</ul>
-                      {course.lessons.map((lesson, index) => (
-                        <section key={`${course.id}-lesson-${index}`} className="mb-3 border-l-2 border-accent/40 pl-3">
-                          <h4 className="text-[12px] font-semibold">{index + 1}. {lesson.title}</h4>
-                          <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-muted">{lesson.body}</p>
-                          {lesson.takeaway && <p className="mt-2 rounded bg-panel2 px-2 py-1.5 text-[11px]"><b>{t('academy.takeaway')} :</b> {lesson.takeaway}</p>}
-                        </section>
-                      ))}
-                    </div>
-                  </details>
                 </article>
               ))}
             </div>
           </section>
         )}
         {loadingCourses && <p className="mb-4 text-[12px] text-muted">{t('academy.loading')}</p>}
-        <div className="grid gap-4 lg:grid-cols-2">
-          {starterCourses.map((course) => (
-            <article key={course.id} className={card}>
-              <div className="mb-3 flex items-start gap-3">
-                <BookOpen size={19} className="mt-0.5 shrink-0 text-accent" />
-                <div className="min-w-0 flex-1">
-                  <h2 className="font-semibold">{localizedText(course.title, locale)}</h2>
-                  <p className="mt-1 text-[11px] text-muted">{t('academy.levelIntro')} · {course.durationMinutes} {t('academy.minutes')}</p>
-                </div>
-              </div>
-              <p className="mb-3 text-[12px] text-muted">{localizedText(course.summary, locale)}</p>
-              <h3 className="mb-1 text-[12px] font-medium">{t('academy.courseObjectives')}</h3>
-              <ul className="mb-3 list-disc space-y-1 pl-5 text-[12px]">
-                {course.objectives.map((objective) => <li key={objective.fr}>{localizedText(objective, locale)}</li>)}
-              </ul>
-              <details className="border-t border-line pt-3">
-                <summary className="cursor-pointer text-[12px] font-medium text-accent">{t('academy.courseContents')}</summary>
-                <div className="mt-3 flex flex-col gap-3">
-                  {course.lessons.map((lesson, index) => (
-                    <section key={lesson.title.fr} className="border-l-2 border-accent/40 pl-3">
-                      <h4 className="text-[12px] font-semibold">{index + 1}. {localizedText(lesson.title, locale)}</h4>
-                      <p className="mt-1 text-[12px] leading-relaxed text-muted">{localizedText(lesson.body, locale)}</p>
-                      <p className="mt-2 rounded bg-panel2 px-2 py-1.5 text-[11px]"><b>{t('academy.takeaway')} :</b> {localizedText(lesson.takeaway, locale)}</p>
-                    </section>
-                  ))}
-                </div>
-              </details>
-            </article>
-          ))}
-        </div>
+        {!loadingCourses && !coursesError && courses.length === 0 && <p className={card}>{t('academy.noCourses')}</p>}
       </main>
     </div>
   );
@@ -263,27 +274,11 @@ export function CoursesPage() {
 export function ExercisesPage() {
   const t = useT();
   const me = useUi((s) => s.me);
-  const locale = useUi((s) => s.locale);
   const toast = useUi((s) => s.toast);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);
-  const builtInExercises = useMemo<Exercise[]>(() => starterExercises.map((exercise) => {
-    const title = localizedText(exercise.title, locale);
-    const statement = localizedText(exercise.statement, locale);
-    return {
-      id: `starter-${exercise.id}`,
-      title,
-      latest_version_id: null,
-      version: 1,
-      published: true,
-      orgName: t('academy.starterPack'),
-      summary: localizedText(exercise.summary, locale),
-      statement,
-      initialProject: exercise.makeProject(title, statement),
-    };
-  }), [locale]);
 
   useEffect(() => {
     let cancelled = false;
@@ -313,9 +308,7 @@ export function ExercisesPage() {
   const openExercise = async (exercise: Exercise) => {
     setOpening(exercise.id);
     try {
-      if (exercise.initialProject) {
-        await createLocalProject(`${exercise.title} — ${t('academy.practice')}`, exercise.initialProject);
-      } else if (exercise.latest_version_id) {
+      if (exercise.latest_version_id) {
         const version = await api<ExerciseVersion>('GET', `/exercise-versions/${exercise.latest_version_id}`);
         await createLocalProject(`${version.title} — ${t('academy.practice')}`, version.initial_project);
       }
@@ -333,25 +326,19 @@ export function ExercisesPage() {
         <p className="mb-4 text-[12px] text-muted">{t('academy.exercisesDescription')}</p>
         {loading && <p className="mb-3 text-[12px] text-muted">{t('academy.loading')}</p>}
         {error && <div className={`${card} mb-3 text-bad`} role="alert">{t('academy.loadError')}</div>}
+        {!loading && !error && exercises.length === 0 && <p className={card}>{t('academy.noExercises')}</p>}
         <div className="grid gap-3 md:grid-cols-2">
-            {[...builtInExercises, ...exercises].map((exercise) => (
+            {exercises.map((exercise) => (
               <article key={exercise.id} className={card}>
                 <div className="flex items-start gap-3">
                   <Dumbbell size={18} className="mt-0.5 shrink-0 text-accent" />
                   <div className="min-w-0 flex-1">
                     <h2 className="font-semibold">{exercise.title}{exercise.kind === 'incident' && <span className="ml-2 rounded bg-warn/15 px-1.5 py-0.5 text-[10px] text-warn">{t('community.incident')}</span>}</h2>
                     <p className="mt-1 text-[11px] text-muted">{exercise.orgName} · {exercise.version ? `v${exercise.version}` : t('academy.noVersion')}</p>
-                    {exercise.summary && <p className="mt-2 text-[12px] text-muted">{exercise.summary}</p>}
-                    {exercise.statement && (
-                      <details className="mt-2">
-                        <summary className="cursor-pointer text-[11px] text-accent">{t('academy.exerciseInstructions')}</summary>
-                        <pre className="mt-2 whitespace-pre-wrap rounded bg-panel2 p-2 text-[11px] font-sans">{exercise.statement}</pre>
-                      </details>
-                    )}
                     {!exercise.published && <span className="mt-2 inline-block rounded bg-panel2 px-2 py-0.5 text-[10px] text-muted">{t('academy.draft')}</span>}
                   </div>
                   <button
-                    disabled={(!exercise.latest_version_id && !exercise.initialProject) || opening === exercise.id}
+                    disabled={!exercise.latest_version_id || opening === exercise.id}
                     className="shrink-0 rounded bg-accent px-3 py-1.5 text-[12px] text-white hover:brightness-110 disabled:opacity-40"
                     onClick={() => void openExercise(exercise)}
                   >

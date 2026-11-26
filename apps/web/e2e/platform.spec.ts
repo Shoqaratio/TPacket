@@ -9,10 +9,10 @@ test('academy navigation exposes dashboard, courses, exercises, activities and p
   await nav.getByRole('button', { name: 'Mes cours' }).click();
   await expect(masthead).toBeVisible();
   await expect(page.locator('.nl-page-enter')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Fondamentaux des réseaux' })).toBeVisible();
+  await expect(page.getByText('Aucun cours disponible.')).toBeVisible();
   await nav.getByRole('button', { name: 'Mes exercices' }).click();
   await expect(masthead).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Premier LAN : connecter deux PC' })).toBeVisible();
+  await expect(page.getByText('Aucun exercice disponible.')).toBeVisible();
   await nav.getByRole('button', { name: 'Mon profil' }).click();
   await expect(masthead).toBeVisible();
   await expect(page.getByText('Informations du compte')).toBeVisible();
@@ -21,12 +21,30 @@ test('academy navigation exposes dashboard, courses, exercises, activities and p
   await expect(page.getByRole('heading', { name: 'Mes devoirs' })).toBeVisible();
 });
 
-test('starter exercise opens a prepared topology in the simulator', async ({ page }) => {
-  await registerAndSignIn(page, 'starter');
-  await page.getByRole('navigation', { name: 'Navigation pédagogique' }).getByRole('button', { name: 'Mes exercices' }).click();
-  await page.getByRole('button', { name: 'S’entraîner' }).first().click();
-  await expect(page.locator('.react-flow__node-device')).toHaveCount(3);
-  await expect(page.getByText(/OBJECTIF/)).toBeVisible();
+test('opens an organization course and displays one lesson at a time', async ({ page }) => {
+  await registerAndSignIn(page, 'course-reader');
+  await page.route('**/api/orgs', (route) => route.fulfill({ json: [{ id: 'lycee', name: 'Lycée' }] }));
+  await page.route('**/api/orgs/lycee/courses', (route) => route.fulfill({ json: [{
+    id: 'first-lan', org_id: 'lycee', title: 'Mon premier LAN', summary: 'Relier deux postes.', duration_minutes: 45,
+    objectives: ['Câbler deux postes'],
+    lessons: [
+      { title: 'Câblage', body: 'Reliez les deux postes au switch.', takeaway: 'Un câble par poste.' },
+      { title: 'Test', body: 'Vérifiez la connexion avec ping.', takeaway: '' },
+    ],
+  }] }));
+  await page.getByRole('navigation', { name: 'Navigation pédagogique' }).getByRole('button', { name: 'Mes cours' }).click();
+  await page.getByRole('button', { name: 'Mon premier LAN' }).click();
+  await expect(page.getByText('Reliez les deux postes au switch.')).toBeVisible();
+  await expect(page.getByText('Vérifiez la connexion avec ping.')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Leçon précédente' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Leçon suivante' }).click();
+  await expect(page.getByText('Vérifiez la connexion avec ping.')).toBeVisible();
+  await expect(page.getByText('Reliez les deux postes au switch.')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Leçon suivante' })).toBeDisabled();
+  await page.getByRole('button', { name: '1. Câblage' }).click();
+  await expect(page.getByText('Reliez les deux postes au switch.')).toBeVisible();
+  await page.getByRole('button', { name: 'Retour aux cours' }).click();
+  await expect(page.getByRole('button', { name: 'Mon premier LAN' })).toBeVisible();
 });
 
 async function drop(page: Page, model: string, x: number, y: number) {
