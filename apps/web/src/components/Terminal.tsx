@@ -110,7 +110,6 @@ export function Terminal({ project, device, kind, session, autoFocus }: Props) {
       hIdx = -1;
       if (text.trim() && !secret) history.unshift(text);
       if (history.length > 50) history.pop();
-      write('\r\x1b[2K');
       write('\n');
       busy = true;
       const r = await sim.cli(project, session, device, kind, 'input', text).finally(() => (busy = false));
