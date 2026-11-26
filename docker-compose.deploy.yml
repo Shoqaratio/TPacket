@@ -1,0 +1,7 @@
+services:
+  api:
+    build:
+      network: host
+  web:
+    build:
+      network: host

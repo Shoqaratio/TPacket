@@ -51,6 +51,7 @@ compose() {
     --project-directory "$app_dir" \
     --env-file "$env_file" \
     --file "$app_dir/docker-compose.yml" \
+    --file "$app_dir/docker-compose.deploy.yml" \
     "$@"
 }
 
