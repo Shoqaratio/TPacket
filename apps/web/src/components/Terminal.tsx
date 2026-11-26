@@ -174,6 +174,12 @@ export function Terminal({ project, device, kind, session, autoFocus }: Props) {
 
     let chain = Promise.resolve();
     const onData = term.onData((data) => {
+      if (keyWaiter) {
+        const waiter = keyWaiter;
+        keyWaiter = null;
+        waiter(data);
+        return;
+      }
       const moves: Record<string, 'left' | 'right' | 'start' | 'end'> = {
         '\x1b[A': 'left',
         '\x1b[B': 'right',
