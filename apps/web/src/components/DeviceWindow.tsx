@@ -74,7 +74,12 @@ export function HostIpForm({ project, dev }: { project: string; dev: DeviceView 
         <legend className="text-muted">{t('host.mode')}</legend>
         {(['static', 'dhcp'] as const).map((m) => (
           <label key={m} className="flex items-center gap-1">
-            <input type="radio" name={`mode-${dev.id}`} checked={f.ipMode === m} onChange={() => setF({ ...f, ipMode: m })} /> {t(`host.${m}`)}
+          <input type="radio" name={`mode-${dev.id}`} checked={f.ipMode === m} onChange={() => {
+            setF({ ...f, ipMode: m });
+            if (m === 'dhcp' && h.ipMode !== 'dhcp') {
+              void sim.op(project, 'setHostConfig', dev.id, { ipMode: 'dhcp', portUp: f.portUp, ...(wireless ? { wifi: f.wifi } : {}) }).catch(fail);
+            }
+          }} /> {t(`host.${m}`)}
           </label>
         ))}
       </fieldset>

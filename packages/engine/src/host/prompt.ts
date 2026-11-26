@@ -86,7 +86,7 @@ export class HostPrompt {
 
     if (sub === '/release') {
       if (h.ipMode !== 'dhcp') return 'Operation failed on adapter FastEthernet0: The adapter is not enabled for DHCP.';
-      this.net.setHostConfig(this.devId, { ip: '', mask: '', gateway: '', dns: '' });
+      this.net.dhcpRelease(this.devId);
       return this.ipconfig([]);
     }
     if (sub && sub !== '/all') return 'Invalid Command.';

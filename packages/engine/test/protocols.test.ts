@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { browse, HostPrompt, parseIp, type EchoOutcome } from '../src';
-import { cli, newNet, pc, pingOk, setHost, twoRouters } from './helpers';
+import { cli, lan, newNet, pc, pingOk, setHost, twoRouters } from './helpers';
 
 /** R0 - R1 - R2 chain with a LAN (switch + PC) behind R0 and R2. */
 function chain() {
@@ -91,6 +91,30 @@ describe('OSPF', () => {
 });
 
 describe('DHCP', () => {
+  it('automatically retries DHCP for connected hosts after a server is enabled', () => {
+    const { net, a, b, sw } = lan();
+    const server = net.addDevice('Server', 0, 0);
+    net.addLink('straight', { device: server.id, port: 'FastEthernet0' }, { device: sw.id, port: 'FastEthernet0/3' });
+    setHost(net, server.id, '192.168.1.250', '255.255.255.0', '192.168.1.254');
+    for (const client of [a, b]) net.setHostConfig(client.id, { ipMode: 'dhcp' });
+    net.advance(45_000);
+    for (const client of [a, b]) expect(net.dev(client.id).host!.ip).toMatch(/^169\.254\./);
+
+    const services = server.services!;
+    net.setServices(server.id, { ...services, dhcp: { enabled: true, pools: [{
+      name: 'LAN', start: '192.168.1.100', mask: '255.255.255.0', max: 100, gateway: '192.168.1.254', dns: '192.168.1.250',
+    }] } });
+    net.advance(30_000);
+    const hosts = [a, b].map((client) => net.dev(client.id).host!);
+    expect(hosts.map((host) => host.ip).sort()).toEqual(['192.168.1.100', '192.168.1.101']);
+    for (const host of hosts) expect(host).toMatchObject({ mask: '255.255.255.0', gateway: '192.168.1.254', dns: '192.168.1.250' });
+    expect(server.host!.ip).toBe('192.168.1.250');
+    pc(net, a.id, 'ipconfig /release');
+    net.advance(5000);
+    expect(net.dev(a.id).host!.ip).toBe('');
+    expect(pc(net, a.id, 'ipconfig /renew')).toContain(hosts[0]!.ip);
+  });
+
   it('a PC obtains an address from an IOS pool, skipping excluded addresses', () => {
     const { net, r0, p0 } = twoRouters();
     cli(net, r0.id, ['enable', 'conf t', 'ip dhcp excluded-address 192.168.1.1 192.168.1.10', 'ip dhcp pool LAN', 'network 192.168.1.0 255.255.255.0', 'default-router 192.168.1.1', 'dns-server 8.8.8.8', 'end']);

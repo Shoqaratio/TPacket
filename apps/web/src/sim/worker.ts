@@ -35,6 +35,7 @@ interface Open {
   lastEventSeq: number;
   pdus: PduView[];
   pduSeq: number;
+  lastDhcpRevision?: number;
 }
 
 const projects = new Map<string, Open>();
@@ -107,7 +108,8 @@ function publish(project: string, o: Open, dirty = false): void {
     post({ type: 'events', project, events: fresh.slice(-500) });
   }
   post({ type: 'pdus', project, pdus: o.pdus.map((p) => ({ ...p })) });
-  if (dirty) post({ type: 'dirty', project });
+  if (dirty || o.net.dhcpRevision !== (o.lastDhcpRevision ?? 0)) post({ type: 'dirty', project });
+  o.lastDhcpRevision = o.net.dhcpRevision;
 }
 
 function snapshot(o: Open): string {

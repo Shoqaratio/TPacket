@@ -231,6 +231,10 @@ export class Network {
   private stpRoot = new Map<number, Map<string, { root: string; cost: number; rootPort?: string; bridges: StpBridge[] }>>();
   private routeCache = new Map<string, { version: number; routes: Route[] }>();
   private waiters = new Map<string, (o: EchoOutcome) => void>();
+  private dhcpScanScheduled = false;
+  private dhcpRequests = new Map<RtDevice, { xid: number; receive: (msg: DhcpMsg) => void }>();
+  private dhcpReleased = new WeakSet<RtDevice>();
+  dhcpRevision = 0;
   private budget = EVENT_BUDGET;
   private apps = new Apps(this);
   private dyn: { version: number; res: DynamicResult } | null = null;
@@ -455,13 +459,17 @@ export class Network {
   resetSimulation(): void {
     this.queue = [];
     this.waiters.clear();
+    this.dhcpRequests.clear();
     this.log = [];
+    this.dhcpScanScheduled = false;
+    this.scheduleDhcpClients();
   }
 
   setServices(id: string, services: unknown): void {
     const d = this.dev(id);
     if (d.spec.role !== 'server') throw new P.ModelError('not_server', 'Only servers have services');
     d.doc.services = P.validateServices(services);
+    this.scheduleDhcpClients();
   }
 
   setWireless(id: string, cfg: { ssid: string; security: 'open' | 'wpa2'; key: string }): void {
@@ -479,6 +487,9 @@ export class Network {
     const d = this.dev(id);
     if (!d.doc.host) throw new P.ModelError('not_host', 'Not an end device');
     const next = { ...d.doc.host, ...cfg };
+    if (next.ipMode === 'dhcp' && d.doc.host.ipMode !== 'dhcp') {
+      Object.assign(next, { ip: '', mask: '', gateway: '', dns: '' });
+    }
     for (const f of ['ip', 'mask', 'gateway', 'dns'] as const) {
       if (next[f] !== '' && parseIp(next[f]) === null) throw new P.ModelError(f === 'ip' ? 'invalid_ip' : `invalid_${f}`, `Invalid ${f}`);
     }
@@ -491,6 +502,7 @@ export class Network {
     const changedIp = next.ip !== d.doc.host.ip || next.mask !== d.doc.host.mask;
     const changedIpv6 = next.ipv6 !== d.doc.host.ipv6 || next.ipv6Gateway !== d.doc.host.ipv6Gateway || next.ipv6Mode !== d.doc.host.ipv6Mode;
     d.doc.host = next;
+    if (cfg.ipMode === 'dhcp') this.dhcpReleased.delete(d);
     if (changedIpv6) {
       d.nd.clear();
       d.pendingNd.clear();
@@ -799,6 +811,7 @@ export class Network {
     for (const d of this.devices.values()) if (d.ios) for (const p of d.dataPorts()) this.operTrunk.set(`${d.doc.id}|${p}`, this.computeTrunk(d, p));
     this.computeStpAll();
     for (const d of this.devices.values()) this.diffInterfaces(d);
+    this.scheduleDhcpClients();
   }
 
   private diffInterfaces(d: RtDevice): void {
@@ -1503,9 +1516,14 @@ export class Network {
     }
     if (p.proto === 'udp') {
       const u = p.udp!;
+      if (u.dport === 68 && d.host && u.data?.app === 'dhcp') {
+        const msg = u.data.dhcp;
+        const request = this.dhcpRequests.get(d);
+        if (request?.xid === msg.xid && msg.chaddr === d.ports.get(inIf)?.mac) request.receive(msg);
+        return;
+      }
       const key = `${d.doc.id}|u|${u.dport}`;
       if (u.data && this.waiters.has(key)) {
-        if (u.data.app === 'dhcp' && u.data.dhcp.chaddr !== d.ports.get(inIf.split('.')[0]!)?.mac) return;
         return this.wake(key, { kind: 'data', from: p.src, rtt: 0, data: u.data });
       }
       if (this.apps.udp(d, inIf, p)) return;
@@ -1698,48 +1716,104 @@ export class Network {
     return response;
   }
 
-  /** `ipconfig /renew`: DHCP DISCOVER/OFFER/REQUEST/ACK, then APIPA when no server answers. */
+  private needsDhcp(d: RtDevice): boolean {
+    const h = d.host;
+    return !!h && h.ipMode === 'dhcp' && !this.dhcpReleased.has(d) && (!h.ip || h.ip.startsWith('169.254.')) &&
+      this.portStatus(d.doc.id, this.hostIf(d)).proto;
+  }
+
+  private scheduleDhcpClients(delay = 1): void {
+    if (this.dhcpScanScheduled || ![...this.devices.values()].some((d) => this.needsDhcp(d))) return;
+    this.dhcpScanScheduled = true;
+    this.enqueueTimer(this.now + delay, () => {
+      this.dhcpScanScheduled = false;
+      for (const d of this.devices.values()) {
+        if (this.needsDhcp(d) && !this.dhcpRequests.has(d)) this.requestDhcp(d);
+      }
+      this.scheduleDhcpClients(5000);
+    });
+  }
+
+  /** Manual renewal waits for the same packet exchange used by automatic clients. */
   dhcpRenew(devId: string): { ok: boolean; ip?: string } {
     const d = this.dev(devId);
-    const h = d.host;
-    if (!h) return { ok: false };
+    if (!d.host) return { ok: false };
+    this.dhcpReleased.delete(d);
+    if (d.host.ipMode !== 'dhcp') this.setHostConfig(devId, { ipMode: 'dhcp' });
+    if (!this.portStatus(devId, this.hostIf(d)).proto) return { ok: false };
+    let result: { ok: boolean; ip?: string } = { ok: false };
+    let done = false;
+    this.requestDhcp(d, (value) => { result = value; done = true; });
+    this.runUntil(this.now + 24_000, () => done);
+    return result;
+  }
+
+  dhcpRelease(devId: string): void {
+    const d = this.dev(devId);
+    this.dhcpRequests.delete(d);
+    this.dhcpReleased.add(d);
+    delete d.dhcpServer;
+    this.setHostConfig(devId, { ip: '', mask: '', gateway: '', dns: '' });
+  }
+
+  private requestDhcp(d: RtDevice, complete: (result: { ok: boolean; ip?: string }) => void = () => {}): void {
+    const h = d.host!;
+    const id = d.doc.id;
     const ifn = this.hostIf(d);
     const mac = d.ports.get(ifn)!.mac;
-    h.ipMode = 'dhcp';
-    if (!this.portStatus(devId, ifn).proto) return { ok: false };
-    const xid = (this.ipId * 7919) & 0xffffffff;
-    const send = (msg: DhcpMsg) => () => {
-      this.sendFrame(d, ifn, BROADCAST_MAC, { src: 0, dst: BROADCAST_IP, ttl: 128, proto: 'udp', id: this.ipId++, udp: { sport: 68, dport: 67, data: { app: 'dhcp', dhcp: msg } } });
-      return true;
-    };
-    const base: DhcpMsg = { op: 'DISCOVER', xid, chaddr: mac, ciaddr: 0, yiaddr: 0, giaddr: 0 };
-    let offer: EchoOutcome = { kind: 'timeout' };
-    for (let i = 0; i < 3 && offer.kind === 'timeout'; i++) offer = this.probe(d, `${devId}|u|68`, 4000, send(base));
-    const finish = (ip: string, mask: string, gw: string, dns: string, server?: number) => {
-      h.ip = ip;
-      h.mask = mask;
-      h.gateway = gw;
-      h.dns = dns;
-      if (server === undefined) delete d.dhcpServer;
-      else d.dhcpServer = server;
-      d.arp.clear();
-      this.refresh();
-      this.gratuitousArp(d, ifn);
-    };
-    if (offer.kind === 'data' && offer.data.app === 'dhcp' && offer.data.dhcp.op === 'OFFER') {
-      const o = offer.data.dhcp;
-      let ack: EchoOutcome = { kind: 'timeout' };
-      for (let i = 0; i < 3 && ack.kind === 'timeout'; i++) ack = this.probe(d, `${devId}|u|68`, 4000, send({ ...base, op: 'REQUEST', yiaddr: o.yiaddr, ...(o.server !== undefined ? { server: o.server } : {}) }));
-      if (ack.kind === 'data' && ack.data.app === 'dhcp' && ack.data.dhcp.op === 'ACK') {
-        const a = ack.data.dhcp;
-        finish(ipToString(a.yiaddr), ipToString(a.mask ?? 0), a.router !== undefined ? ipToString(a.router) : '', a.dns !== undefined ? ipToString(a.dns) : '', a.server);
-        return { ok: true, ip: ipToString(a.yiaddr) };
+    const xid = (this.ipId++ * 7919) & 0xffffffff;
+    let message: DhcpMsg = { op: 'DISCOVER', xid, chaddr: mac, ciaddr: 0, yiaddr: 0, giaddr: 0 };
+    let attempts = 0;
+    const active = () => this.dhcpRequests.get(d) === request;
+    const valid = () => this.devices.get(id) === d && d.host === h && h.ipMode === 'dhcp' &&
+      this.hostIf(d) === ifn && this.portStatus(id, ifn).proto;
+    const finish = (ack?: DhcpMsg) => {
+      this.dhcpRequests.delete(d);
+      if (valid()) {
+        const n = parseInt(mac.slice(8), 16);
+        const ip = ack ? ipToString(ack.yiaddr) : `169.254.${(n >> 8) % 254 + 1}.${(n & 255) % 254 + 1}`;
+        const mask = ack ? ipToString(ack.mask ?? 0) : '255.255.0.0';
+        const gateway = ack?.router !== undefined ? ipToString(ack.router) : '';
+        const dns = ack?.dns !== undefined ? ipToString(ack.dns) : '';
+        if (ack?.server === undefined) delete d.dhcpServer;
+        else d.dhcpServer = ack.server;
+        if (h.ip !== ip || h.mask !== mask || h.gateway !== gateway || h.dns !== dns) {
+          Object.assign(h, { ip, mask, gateway, dns });
+          this.dhcpRevision++;
+          d.arp.clear();
+          this.refresh();
+          this.gratuitousArp(d, ifn);
+        }
+        complete(ack ? { ok: true, ip } : { ok: false });
+      } else {
+        complete({ ok: false });
       }
-    }
-    // APIPA (169.254.0.0/16), deterministic from the MAC address.
-    const n = parseInt(mac.slice(8), 16);
-    finish(`169.254.${(n >> 8) % 254 + 1}.${(n & 255) % 254 + 1}`, '255.255.0.0', '', '');
-    return { ok: false };
+    };
+    const send = () => {
+      if (!valid() || ++attempts > 3) return finish();
+      const sent = message;
+      const attempt = attempts;
+      this.sendFrame(d, ifn, BROADCAST_MAC, { src: 0, dst: BROADCAST_IP, ttl: 128, proto: 'udp', id: this.ipId++, udp: { sport: 68, dport: 67, data: { app: 'dhcp', dhcp: sent } } });
+      this.enqueueTimer(this.now + 4000, () => {
+        if (active() && message === sent && attempts === attempt) send();
+      });
+    };
+    const request = {
+      xid,
+      receive: (reply: DhcpMsg) => {
+        if (!valid()) return finish();
+        if (message.op === 'DISCOVER' && reply.op === 'OFFER') {
+          message = { ...message, op: 'REQUEST', yiaddr: reply.yiaddr, ...(reply.server !== undefined ? { server: reply.server } : {}) };
+          attempts = 0;
+          send();
+        } else if (message.op === 'REQUEST' && (message.server === undefined || message.server === reply.server)) {
+          if (reply.op === 'ACK' && reply.yiaddr === message.yiaddr) finish(reply);
+          else if (reply.op === 'NAK') finish();
+        }
+      },
+    };
+    this.dhcpRequests.set(d, request);
+    send();
   }
 
   ipv6Renew(devId: string): { ok: boolean; ipv6?: string; gateway?: string } {

@@ -84,10 +84,9 @@ test('wireless laptop gets an address by DHCP from a server and browses its web 
   await page.getByRole('button', { name: 'Avance rapide (+30 s)' }).click();
   // Laptop: join the Wi-Fi (open SSID "Default") and use DHCP.
   await nodes.nth(3).click();
-  await page.getByLabel('DHCP').first().check();
   await page.getByLabel('SSID (réseau Wi‑Fi)').first().fill('Default');
-  await page.getByRole('button', { name: 'Demander une adresse (DHCP)' }).click();
-  await expect(page.getByText('Adresse obtenue : 192.168.10.100')).toBeVisible();
+  await page.getByLabel('DHCP').first().check();
+  await expect(page.getByLabel('Adresse IPv4').first()).toHaveValue('192.168.10.100');
   await expect(page.locator('.react-flow__edge-wifi')).toHaveCount(1);
   await nodes.nth(3).dblclick();
   await page.getByRole('tab', { name: 'Bureau' }).click();
