@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import auth, classes, collab, exercises, features, orgs, projects, tutor
+from .routers import auth, classes, collab, courses, exercises, features, orgs, projects, tutor
 
 
 def create_app() -> FastAPI:
@@ -34,7 +34,7 @@ def create_app() -> FastAPI:
     def health():
         return {"status": "ok"}
 
-    for r in (auth.router, orgs.router, projects.router, exercises.router, classes.router, collab.router, tutor.router, features.router):
+    for r in (auth.router, orgs.router, projects.router, exercises.router, courses.router, classes.router, collab.router, tutor.router, features.router):
         app.include_router(r)
     return app
 

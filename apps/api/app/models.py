@@ -108,6 +108,20 @@ class ProjectVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class Course(Base):
+    __tablename__ = "courses"
+    __table_args__ = (Index("ix_courses_org_created", "org_id", "created_at"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    title: Mapped[str] = mapped_column(String(200))
+    summary: Mapped[str] = mapped_column(Text)
+    duration_minutes: Mapped[int] = mapped_column(Integer)
+    objectives: Mapped[list] = mapped_column(JsonType)
+    lessons: Mapped[list] = mapped_column(JsonType)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Exercise(Base):
     __tablename__ = "exercises"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)

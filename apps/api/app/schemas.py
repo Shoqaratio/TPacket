@@ -97,6 +97,49 @@ class ExerciseIn(BaseModel):
     title: str = Field(min_length=1, max_length=200)
 
 
+class CourseLessonIn(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=20_000)
+    takeaway: str = Field(default="", max_length=4_000)
+
+    @field_validator("title", "body")
+    @classmethod
+    def trim_required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must_not_be_empty")
+        return value
+
+    @field_validator("takeaway")
+    @classmethod
+    def trim_takeaway(cls, value: str) -> str:
+        return value.strip()
+
+
+class CourseIn(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    summary: str = Field(min_length=1, max_length=4_000)
+    duration_minutes: int = Field(ge=1, le=1_440)
+    objectives: list[str] = Field(min_length=1, max_length=30)
+    lessons: list[CourseLessonIn] = Field(min_length=1, max_length=50)
+
+    @field_validator("title", "summary")
+    @classmethod
+    def trim_required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must_not_be_empty")
+        return value
+
+    @field_validator("objectives")
+    @classmethod
+    def clean_objectives(cls, values: list[str]) -> list[str]:
+        cleaned = [value.strip() for value in values]
+        if any(not value or len(value) > 300 for value in cleaned):
+            raise ValueError("invalid_objective")
+        return cleaned
+
+
 class ExerciseVersionIn(BaseModel):
     statement: str = Field(max_length=100_000)
     initial_project: dict[str, Any]

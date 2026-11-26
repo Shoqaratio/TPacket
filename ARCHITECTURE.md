@@ -92,7 +92,8 @@ Chaque modification déclenche une sauvegarde IndexedDB (600 ms), puis une synch
 
 ## Modèle de données (implémenté)
 
-`users`, `organizations`, `organization_members` (rôle : student / teacher / org_admin),
+`users`, `organizations`, `organization_members` (rôle : student / teacher / org_admin), `courses`
+(cours créés par les enseignants, partagés avec les membres de l'établissement),
 `org_invites` (codes hachés), `sessions` (jetons hachés + CSRF), `projects`, `project_versions`
 (30 dernières), `exercises`, `exercise_versions` (énoncé, projet initial, barème secret),
 `submissions`, `submission_snapshots`, `grading_jobs`, `grading_results`, `audit_logs`,
@@ -101,11 +102,12 @@ Chaque modification déclenche une sauvegarde IndexedDB (600 ms), puis une synch
 Les versions d'exercice distinguent les incidents réseau et conservent une association critères-compétences.
 Les compétences sont un catalogue applicatif ; points et badges sont dérivés des résultats visibles,
 pas stockés comme classement. Les publications communautaires restent invisibles jusqu'à validation
-super-admin. Ces fonctions ne constituent pas encore un système complet de cours/quiz.
+super-admin. Les cours ont des objectifs et des leçons créés par le personnel de l'établissement ;
+les quiz et parcours pédagogiques complets restent à construire.
 
 Isolation : toute ressource d'établissement est filtrée par appartenance ; un non-membre reçoit
 **404** (et non 403) pour ne pas révéler l'existence d'une ressource. La collaboration ordonne les
 opérations côté serveur, mais les salons et leur journal restent en mémoire d'un processus ; chaque
 participant rejoue les opérations dans son moteur déterministe local. Les ticks serveur font avancer
-le worker de chaque participant ; l'horloge affichée utilise le temps du worker. Les cours et quiz
-restent planifiés dans `ROADMAP.md`.
+le worker de chaque participant ; l'horloge affichée utilise le temps du worker. Les quiz et parcours
+pédagogiques complets restent planifiés dans `ROADMAP.md`.

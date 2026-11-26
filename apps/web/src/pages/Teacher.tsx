@@ -314,6 +314,7 @@ export function TeacherPage() {
                 <h2 className="mb-2 mt-4 font-semibold">{t('teacher.exercises')}</h2>
                 <ul className="text-[12px]">{exercises.map((x) => <li key={x.id} className="border-t border-line py-1">{x.title} <span className="text-muted">v{x.version ?? 0}{x.published ? '' : ` · ${t('teacher.draft')}`}</span></li>)}</ul>
                 <p className="mt-2 text-[11px] text-muted">{t('teacher.exerciseHint')}</p>
+                <button disabled={!org} className="mt-2 rounded border border-line px-3 py-1 text-[12px] disabled:opacity-50" onClick={() => set({ page: 'home' })}>{t('teacher.openProjectForExercise')}</button>
               </section>
             </div>
           </>

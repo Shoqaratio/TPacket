@@ -25,16 +25,206 @@ interface ExerciseVersion {
   initial_project: unknown;
 }
 
+interface CourseLesson {
+  title: string;
+  body: string;
+  takeaway: string;
+}
+
+interface Course {
+  id: string;
+  org_id: string;
+  orgName: string;
+  title: string;
+  summary: string;
+  duration_minutes: number;
+  objectives: string[];
+  lessons: CourseLesson[];
+}
+
+interface CourseOrg {
+  id: string;
+  name: string;
+}
+
 const card = 'rounded-lg border border-line bg-panel p-4';
+const input = 'rounded border border-line bg-panel2 px-2 py-1 outline-none focus:border-accent';
 
 export function CoursesPage() {
   const t = useT();
   const locale = useUi((s) => s.locale);
+  const me = useUi((s) => s.me);
+  const toast = useUi((s) => s.toast);
+  const [orgs, setOrgs] = useState<CourseOrg[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [loadingCourses, setLoadingCourses] = useState(true);
+  const [coursesError, setCoursesError] = useState(false);
+  const [orgId, setOrgId] = useState('');
+  const [title, setTitle] = useState('');
+  const [summary, setSummary] = useState('');
+  const [duration, setDuration] = useState(45);
+  const [objectives, setObjectives] = useState('');
+  const [lessons, setLessons] = useState<CourseLesson[]>([{ title: '', body: '', takeaway: '' }]);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState(false);
+  const writableOrgs = useMemo(() => me?.is_superadmin
+    ? orgs
+    : orgs.filter((org) => me?.memberships.some((membership) => membership.org_id === org.id && membership.role !== 'student')),
+  [me?.is_superadmin, me?.memberships, orgs]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!me) {
+      setOrgs([]);
+      setCourses([]);
+      setLoadingCourses(false);
+      return () => { cancelled = true; };
+    }
+
+    setLoadingCourses(true);
+    setCoursesError(false);
+    void api<CourseOrg[]>('GET', '/orgs').then(async (availableOrgs) => {
+      if (cancelled) return;
+      setOrgs(availableOrgs);
+      const byOrg = await Promise.all(availableOrgs.map(async (org) => {
+        const rows = await api<Omit<Course, 'orgName'>[]>('GET', `/orgs/${org.id}/courses`);
+        return rows.map((course) => ({ ...course, orgName: org.name }));
+      }));
+      if (!cancelled) setCourses(byOrg.flat());
+    }).catch(() => {
+      if (!cancelled) setCoursesError(true);
+    }).finally(() => {
+      if (!cancelled) setLoadingCourses(false);
+    });
+    return () => { cancelled = true; };
+  }, [me]);
+
+  useEffect(() => {
+    setOrgId((current) => writableOrgs.some((org) => org.id === current) ? current : writableOrgs[0]?.id ?? '');
+  }, [writableOrgs]);
+
+  const createCourse = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const cleanObjectives = objectives.split('\n').map((item) => item.trim()).filter(Boolean);
+    const cleanLessons = lessons.map((lesson) => ({
+      title: lesson.title.trim(),
+      body: lesson.body.trim(),
+      takeaway: lesson.takeaway.trim(),
+    }));
+    if (!orgId || !title.trim() || !summary.trim() || !cleanObjectives.length || cleanLessons.some((lesson) => !lesson.title || !lesson.body)) return;
+
+    setCreating(true);
+    setCreateError(false);
+    try {
+      const created = await api<Omit<Course, 'orgName'>>('POST', `/orgs/${orgId}/courses`, {
+        title: title.trim(),
+        summary: summary.trim(),
+        duration_minutes: duration,
+        objectives: cleanObjectives,
+        lessons: cleanLessons,
+      });
+      const orgName = orgs.find((org) => org.id === orgId)?.name ?? '';
+      setCourses((current) => [ { ...created, orgName }, ...current ]);
+      setTitle('');
+      setSummary('');
+      setDuration(45);
+      setObjectives('');
+      setLessons([{ title: '', body: '', takeaway: '' }]);
+      toast(t('academy.courseCreated'));
+    } catch {
+      setCreateError(true);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const updateLesson = (index: number, field: keyof CourseLesson, value: string) => {
+    setLessons((current) => current.map((lesson, i) => i === index ? { ...lesson, [field]: value } : lesson));
+  };
+
   return (
     <div className="nl-scroll h-full overflow-auto">
       <AcademyPageHeader title={t('academy.courses')} />
       <main className="mx-auto max-w-6xl p-6">
         <p className="mb-4 text-[12px] text-muted">{t('academy.starterCoursesDescription')}</p>
+        {writableOrgs.length > 0 && (
+          <section className={`${card} mb-4`}>
+            <h2 className="mb-3 font-semibold">{t('academy.createCourse')}</h2>
+            <form className="flex flex-col gap-3" onSubmit={(event) => void createCourse(event)}>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1 text-[12px]">
+                  <span className="text-muted">{t('academy.courseOrganization')}</span>
+                  <select required className={input} value={orgId} onChange={(event) => setOrgId(event.target.value)}>
+                    {writableOrgs.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-[12px]">
+                  <span className="text-muted">{t('academy.courseTitle')}</span>
+                  <input required maxLength={200} className={input} value={title} onChange={(event) => setTitle(event.target.value)} />
+                </label>
+              </div>
+              <label className="flex flex-col gap-1 text-[12px]">
+                <span className="text-muted">{t('academy.courseSummary')}</span>
+                <textarea required maxLength={4000} className={`${input} min-h-16`} value={summary} onChange={(event) => setSummary(event.target.value)} />
+              </label>
+              <label className="flex max-w-xs flex-col gap-1 text-[12px]">
+                <span className="text-muted">{t('academy.courseDuration')}</span>
+                <input required type="number" min={1} max={1440} className={input} value={duration} onChange={(event) => setDuration(Number(event.target.value))} />
+              </label>
+              <label className="flex flex-col gap-1 text-[12px]">
+                <span className="text-muted">{t('academy.courseObjectivesInput')}</span>
+                <textarea required className={`${input} min-h-20`} value={objectives} onChange={(event) => setObjectives(event.target.value)} placeholder={t('academy.courseObjectivesPlaceholder')} />
+              </label>
+              <div className="flex flex-col gap-2">
+                <h3 className="text-[12px] font-medium">{t('academy.courseLessons')}</h3>
+                {lessons.map((lesson, index) => (
+                  <fieldset key={index} className="flex flex-col gap-2 rounded border border-line p-3">
+                    <legend className="px-1 text-[11px] text-muted">{t('academy.courseLessonNumber', { n: index + 1 })}</legend>
+                    <input required maxLength={200} aria-label={t('academy.courseLessonTitle')} className={input} value={lesson.title} onChange={(event) => updateLesson(index, 'title', event.target.value)} placeholder={t('academy.courseLessonTitle')} />
+                    <textarea required maxLength={20000} aria-label={t('academy.courseLessonBody')} className={`${input} min-h-28`} value={lesson.body} onChange={(event) => updateLesson(index, 'body', event.target.value)} placeholder={t('academy.courseLessonBody')} />
+                    <input maxLength={4000} aria-label={t('academy.courseTakeaway')} className={input} value={lesson.takeaway} onChange={(event) => updateLesson(index, 'takeaway', event.target.value)} placeholder={t('academy.courseTakeaway')} />
+                    {lessons.length > 1 && <button type="button" className="self-start text-[11px] text-bad" onClick={() => setLessons((current) => current.filter((_, i) => i !== index))}>{t('academy.removeLesson')}</button>}
+                  </fieldset>
+                ))}
+                <button type="button" className="self-start rounded border border-line px-3 py-1 text-[12px]" onClick={() => setLessons((current) => [...current, { title: '', body: '', takeaway: '' }])}>{t('academy.addLesson')}</button>
+              </div>
+              {createError && <p className="text-[12px] text-bad" role="alert">{t('academy.courseCreateError')}</p>}
+              <button disabled={creating || !orgId} className="self-start rounded bg-accent px-3 py-1.5 text-[12px] text-white disabled:opacity-50">
+                {creating ? t('academy.loading') : t('academy.createCourse')}
+              </button>
+            </form>
+          </section>
+        )}
+        {coursesError && <p className={`${card} mb-4 text-bad`} role="alert">{t('academy.courseLoadError')}</p>}
+        {courses.length > 0 && (
+          <section className="mb-6">
+            <h2 className="mb-3 text-[15px] font-semibold">{t('academy.organizationCourses')}</h2>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {courses.map((course) => (
+                <article key={course.id} className={card}>
+                  <h3 className="font-semibold">{course.title}</h3>
+                  <p className="mt-1 text-[11px] text-muted">{course.orgName} · {course.duration_minutes} {t('academy.minutes')}</p>
+                  <p className="mt-2 text-[12px] text-muted">{course.summary}</p>
+                  <details className="mt-3 border-t border-line pt-3">
+                    <summary className="cursor-pointer text-[12px] font-medium text-accent">{t('academy.courseContents')}</summary>
+                    <div className="mt-3">
+                      <h4 className="text-[12px] font-medium">{t('academy.courseObjectives')}</h4>
+                      <ul className="mb-3 list-disc pl-5 text-[12px]">{course.objectives.map((objective, index) => <li key={`${course.id}-objective-${index}`}>{objective}</li>)}</ul>
+                      {course.lessons.map((lesson, index) => (
+                        <section key={`${course.id}-lesson-${index}`} className="mb-3 border-l-2 border-accent/40 pl-3">
+                          <h4 className="text-[12px] font-semibold">{index + 1}. {lesson.title}</h4>
+                          <p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-muted">{lesson.body}</p>
+                          {lesson.takeaway && <p className="mt-2 rounded bg-panel2 px-2 py-1.5 text-[11px]"><b>{t('academy.takeaway')} :</b> {lesson.takeaway}</p>}
+                        </section>
+                      ))}
+                    </div>
+                  </details>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+        {loadingCourses && <p className="mb-4 text-[12px] text-muted">{t('academy.loading')}</p>}
         <div className="grid gap-4 lg:grid-cols-2">
           {starterCourses.map((course) => (
             <article key={course.id} className={card}>

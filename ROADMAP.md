@@ -87,6 +87,8 @@ périodiques. Les routes restent calculées à l'état convergé, plutôt que d'
 
 ## Phase 7 — Finalisation ⬜
 Contenu pédagogique complet (11 modules, 35 cours, 60 exercices, 150 questions, 20 scénarios,
-5 examens, 10 projets, glossaire de 100 termes) : **aucun contenu de cours, exercice ou quiz n'est
-encore livré**. Restent aussi la comparaison avec Packet Tracer, audit de sécurité, benchmarks
-(100 / 500 équipements), documentation, validation PostgreSQL de la migration 0003 et déploiement.
+5 examens, 10 projets, glossaire de 100 termes) : **le contenu pédagogique complet et les quiz ne
+sont pas encore livrés**. Les enseignants peuvent créer des cours et des exercices dans leurs
+établissements, mais le contenu initial doit encore être produit. Restent aussi la comparaison avec
+Packet Tracer, audit de sécurité, benchmarks (100 / 500 équipements), documentation, validation
+PostgreSQL de la migration 0004 et déploiement.
