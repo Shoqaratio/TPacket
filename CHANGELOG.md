@@ -1,5 +1,14 @@
 # Changelog
 
+## En cours
+
+- TPacket Campus à `/campus` avec rendu Phaser 3, douze salles, PNJ, avatars, commandes tactiles,
+  navigation A*, chat et salons de classe via Redis.
+- Six travaux pratiques intégrés au correcteur, examens de l’Académie, présentation synchronisée,
+  visibilité des salles, modération, incidents programmés, invitations collaboratives et export CSV.
+- Progression ludique issue des corrections serveur, tenues à débloquer et migration Alembic `0005`.
+- Tests Campus unitaires, API, charge WebSocket à 35 élèves et Playwright.
+
 ## 0.1.0 — 2026-11-25
 Première version : fondations, simulateur fondamental, début du simulateur avancé et du correcteur.
 

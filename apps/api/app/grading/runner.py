@@ -38,13 +38,16 @@ def run_grader(project: dict[str, Any], rubric: dict[str, Any]) -> GradeOutcome:
     if not os.path.exists(s.grader_path):
         return GradeOutcome(False, error="grader bundle missing: run `npm run build -w @netlab/engine`")
     payload = json.dumps({"project": project, "rubric": rubric}).encode()
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+    if sys.platform == "win32" and "SYSTEMROOT" in os.environ:
+        env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]  # Node's Windows crypto initialization needs this.
     try:
         proc = subprocess.run(
             [s.node_bin, f"--max-old-space-size={s.grader_max_heap_mb}", s.grader_path],
             input=payload,
             capture_output=True,
             timeout=s.grader_timeout_s,
-            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
+            env=env,
             preexec_fn=_limits(int(s.grader_timeout_s)) if sys.platform != "win32" else None,
             check=False,
         )

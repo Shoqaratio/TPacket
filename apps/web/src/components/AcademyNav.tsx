@@ -12,7 +12,7 @@ const items: { page: Page; label: string }[] = [
   { page: 'profile', label: 'academy.profile' },
 ];
 
-export function AcademyNav({ current, me }: { current: Page; me: Me | null }) {
+export function AcademyNav({ current, me, openCampus }: { current: Page; me: Me | null; openCampus?: () => void }) {
   const t = useT();
   const set = useUi((s) => s.set);
   const canTeach = !!me && (me.is_superadmin || me.memberships.some((m) => m.role !== 'student'));
@@ -29,6 +29,8 @@ export function AcademyNav({ current, me }: { current: Page; me: Me | null }) {
           {t(label)}
         </button>
       ))}
+      {openCampus && <a href="/campus" className="shrink-0 rounded px-3 py-1.5 text-[12px] text-muted hover:bg-panel2 hover:text-fg"
+        onClick={e => { if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) { e.preventDefault(); openCampus(); } }}>Campus</a>}
       {canTeach && (
         <button
           aria-current={current === 'teacher' ? 'page' : undefined}

@@ -1,5 +1,19 @@
 # Feuille de route
 
+## TPacket Campus
+
+1. **Jeu et carte** — livré avec douze salles, PNJ, collisions, commandes et interactions.
+2. **Missions et correction** — six TP livrés, accès aux devoirs existants, aux examens et à la correction.
+   Étendre le catalogue à Wi-Fi, OSPF, ACL défensives et aux incidents à pannes multiples.
+3. **Multijoueur** — salons par classe, Redis, chats de proximité/salle/classe, aide et invitations.
+   Étendre la gestion à des sessions et des groupes pédagogiques.
+4. **Enseignants et progression** — affectation des postes, restrictions, export, XP, niveaux et tenues.
+   Compléter avec les quêtes, défis hebdomadaires et un historique ludique dédié.
+5. **Contenu avancé** — incidents programmés déclenchables par classe, guides progressifs et
+   présentation synchronisée des cours. Ajouter les quiz en direct et les escape games.
+6. **Validation** — test local à 35 connexions, avec une et deux instances API. Poursuivre avec
+   un essai long sur l’infrastructure et les ordinateurs d’un lycée.
+
 Légende : ✅ fait et testé · 🟡 partiel · ⬜ à faire. Chaque phase doit livrer une version fonctionnelle et testée.
 
 ## Phase 1 — Fondations 🟡

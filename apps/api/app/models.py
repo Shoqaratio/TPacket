@@ -4,7 +4,7 @@ import enum
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, event
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, event, false
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -39,6 +39,7 @@ class Organization(Base):
 
 class User(Base):
     __tablename__ = "users"
+    campus_color: Mapped[int | None] = mapped_column(Integer, nullable=True)
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     email: Mapped[str] = mapped_column(String(320), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
@@ -218,6 +219,7 @@ class AuditLog(Base):
 
 class SchoolClass(Base):
     __tablename__ = "classes"
+    campus_rules: Mapped[dict | None] = mapped_column(JsonType, nullable=True)
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(120))
@@ -238,10 +240,14 @@ class ClassMember(Base):
 
 class Assignment(Base):
     __tablename__ = "assignments"
+    __table_args__ = (Index("uq_assignment_campus_template", "class_id", "campus_template", unique=True),)
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     class_id: Mapped[str] = mapped_column(ForeignKey("classes.id", ondelete="CASCADE"), index=True)
     exercise_version_id: Mapped[str] = mapped_column(ForeignKey("exercise_versions.id"))
     title: Mapped[str] = mapped_column(String(200))
+    campus_room: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    campus_template: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    campus_rewardable: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     opens_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     exam: Mapped[bool] = mapped_column(Boolean, default=False)

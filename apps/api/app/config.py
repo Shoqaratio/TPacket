@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     session_days: int = 14
     cors_origins: list[str] = ["http://localhost:5173"]
+    campus_redis_url: str | None = None
     # The account registering with this e-mail becomes super-administrator (self-hosting bootstrap).
     bootstrap_admin_email: str | None = None
     node_bin: str = "node"

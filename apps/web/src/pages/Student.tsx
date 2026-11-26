@@ -13,6 +13,7 @@ interface Item {
   due_at: string | null;
   deadline: string | null;
   exam: boolean;
+  practice?: boolean;
   duration_min: number | null;
   attempts: number;
   max_attempts: number;
@@ -55,7 +56,7 @@ export function StudentPage() {
             <tbody>
               {data?.assignments.map((a) => (
                 <tr key={a.id} className="border-t border-line">
-                  <td className="py-2"><b>{a.title}</b>{a.kind === 'incident' && <span className="ml-2 rounded bg-warn/15 px-1.5 py-0.5 text-[10px] text-warn">{t('community.incident')}</span>}<div className="text-[11px] text-muted">{a.class_name}{a.exam ? ` · ${t('asg.exam')} ${a.duration_min} min` : ''}</div></td>
+                  <td className="py-2"><b>{a.title}</b>{a.kind === 'incident' && <span className="ml-2 rounded bg-warn/15 px-1.5 py-0.5 text-[10px] text-warn">{t('community.incident')}</span>}<div className="text-[11px] text-muted">{a.class_name}{a.exam ? ` · ${t('asg.exam')} ${a.duration_min} min` : ''}{a.practice ? ` · ${t('student.practice')}` : ''}</div></td>
                   <td className="text-[12px] text-muted">{a.deadline ? new Date(a.deadline).toLocaleString() : a.due_at ? new Date(a.due_at).toLocaleString() : ''}</td>
                   <td className="text-[12px]">{a.attempts ? `${t('student.submitted')} (${a.attempts}${a.max_attempts ? `/${a.max_attempts}` : ''})` : t('student.todo')}</td>
                   <td className="font-semibold">{a.score !== undefined && a.score !== null ? `${a.score}/${a.max_score}` : ''}</td>

@@ -3,7 +3,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useT } from '../i18n';
-import { closeProject, copySelectionToClipboard, exportNetlab, openProject, pasteSelectionFromClipboard, saveAsCloudCopy, useSave } from '../projects';
+import { closeProject, copySelectionToClipboard, exportNetlab, flush, openProject, pasteSelectionFromClipboard, saveAsCloudCopy, useSave } from '../projects';
 import { sim, useSim } from '../sim/client';
 import { useUi } from '../store';
 import { BottomPanel } from './BottomPanel';
@@ -96,12 +96,18 @@ function Tabs() {
   );
 }
 
-export function Workspace({ project }: { project: string }) {
+export function Workspace({ project, campus = false }: { project: string; campus?: boolean }) {
   useShortcuts(project);
   return (
     <ReactFlowProvider>
       <div className="flex h-full flex-col">
         <MenuBar project={project} />
+        {campus && <button className="self-start px-3 py-1 text-sm text-accent" onClick={() => {
+          const ui = useUi.getState();
+          void flush(project).then(() => {
+            if (useUi.getState().active === project) ui.set({ active: null });
+          }).catch(() => ui.toast('La sauvegarde du projet a échoué.', 'error'));
+        }}>← Retour au campus</button>}
         <Tabs />
         <Toolbar project={project} />
         <AssignmentBar project={project} />

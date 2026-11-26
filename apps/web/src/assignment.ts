@@ -28,8 +28,8 @@ async function load(aid: string): Promise<AssignmentCtx & { initial_project: unk
 }
 
 /** Opens (or resumes) the student's working copy of an assignment. */
-export async function openAssignment(aid: string): Promise<string> {
-  await api('POST', `/assignments/${aid}/start`);
+export async function openAssignment(aid: string, startPath = `/assignments/${aid}/start`): Promise<string> {
+  await api('POST', startPath);
   const a = await load(aid);
   const existing = (await storage.list()).find((p) => p.assignmentId === aid);
   let pid: string;

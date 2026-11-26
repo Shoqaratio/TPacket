@@ -8,8 +8,8 @@ BTS SIO. Aucun logiciel Cisco n'est inclus : l'émulation IOS est un interpréte
 > nommées, DHCP/DHCPv6, DNS, NAT/PAT, TCP, FTP, SMTP/POP3, NTP, IPv6 statique/SLAAC et Wi-Fi.
 > Le mode Simulation comprend les PDU complexes
 > ICMP/TCP/UDP et l'export PCAP Ethernet. Les espaces élève/professeur, devoirs/examens, éditeur de critères,
-> collaboration et tutorat sont également présents. Le contenu de cours, d'exercices et de quiz
-> n'est pas encore livré. La phase 2 ajoute des modèles d'équipement, l'édition de ligne CLI et le
+> collaboration et tutorat sont également présents. Le Campus fournit six modèles de TP installables.
+> La phase 2 ajoute des modèles d'équipement, l'édition de ligne CLI et le
 > copier/coller inter-projets. Les capacités et limites précises sont détaillées dans
 > [PROGRESS.md](PROGRESS.md) et [COMPATIBILITY.md](COMPATIBILITY.md).
 
@@ -30,6 +30,22 @@ NETLAB_BOOTSTRAP_ADMIN_EMAIL=vous@exemple.fr .venv/bin/uvicorn app.main:app --re
 ```
 
 Le serveur de développement Vite relaie `/api` vers `localhost:8000`.
+
+## TPacket Campus
+
+Connectez-vous, puis choisissez **Campus** dans l’Académie ou ouvrez `/campus`. Le hall donne accès à
+douze salles. Les déplacements sont possibles avec ZQSD, WASD, les flèches, un clic ou les commandes tactiles.
+Le plan (`M`) permet de choisir une destination à pied. Approchez-vous d’un écran turquoise et appuyez sur
+`E` pour ouvrir les missions de la salle.
+
+Les enseignants choisissent une classe, ouvrent **Gestion**, puis installent les TP proposés ou affectent un
+devoir existant à une salle. Les examens de la classe apparaissent dans la salle d’examen. Les missions
+ouvrent le simulateur TPacket, avec sa sauvegarde et son correcteur habituels. **Retour au campus** revient
+au même endroit après sauvegarde locale.
+
+Docker Compose configure Redis pour les salons Campus. En développement, `NETLAB_CAMPUS_REDIS_URL`
+est facultative et le mode sans Redis utilise la mémoire d’une seule instance API. Appliquez la migration
+`0005` avec `alembic upgrade head`.
 
 ## Déploiement (auto-hébergement)
 
@@ -59,9 +75,8 @@ cd apps/web && npx tsc --noEmit -p .                     # types web
 cd apps/web && npx playwright test                       # API temporaire + Vite + Chromium
 ```
 
-Dernière vérification consignée : 88 tests moteur, 9 tests web, 19 tests API, typechecks/builds
-réussis et 11/11 tests Playwright réussis dans la suite complète. Consulter [PROGRESS.md](PROGRESS.md) pour les limites de
-validation et de déploiement.
+La suite inclut des tests Campus de navigation, de permissions et de charge WebSocket à 35 élèves
+avec Redis. Les résultats et les limites de validation figurent dans [PROGRESS.md](PROGRESS.md).
 
 ## Structure
 

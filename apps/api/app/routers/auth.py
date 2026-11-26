@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
@@ -51,7 +52,13 @@ def register(body: RegisterIn, request: Request, response: Response, db: Session
     u = User(email=email, password_hash=hash_password(body.password), display_name=body.display_name.strip(), locale=body.locale,
              is_superadmin=bool(s.bootstrap_admin_email and s.bootstrap_admin_email.lower() == email))
     db.add(u)
-    db.commit()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        if db.scalar(select(User.id).where(User.email == email)):
+            raise HTTPException(409, "email_taken") from None
+        raise
     db.add(AuditLog(actor_id=u.id, action="user.register", target=u.id))
     _start_session(db, response, request, u)
     return user_out(db, u)

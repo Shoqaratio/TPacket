@@ -1,5 +1,7 @@
 import json
+import shutil
 import subprocess
+from tempfile import TemporaryDirectory
 from pathlib import Path
 
 import pytest
@@ -49,7 +51,7 @@ def grader_bundle():
 def _two_pc_project(ip2: str) -> dict:
     """Builds a real project with the engine (PC0 - Switch0 - PC1)."""
     script = f"""
-    import {{ Network, createProject }} from './src/index.ts';
+    import {{ Network, createProject }} from '../src/index.ts';
     const n = new Network(createProject('t'));
     const s = n.addDevice('2960-24TT', 0, 0); const a = n.addDevice('PC', 0, 0); const b = n.addDevice('PC', 0, 0);
     n.addLink('straight', {{device: a.id, port: 'FastEthernet0'}}, {{device: s.id, port: 'FastEthernet0/1'}});
@@ -58,7 +60,10 @@ def _two_pc_project(ip2: str) -> dict:
     n.setHostConfig(b.id, {{ip: '{ip2}', mask: '255.255.255.0'}});
     console.log(JSON.stringify(n.serialize()));
     """
-    out = subprocess.run(["npx", "--yes", "tsx", "-e", script], cwd=ENGINE, capture_output=True, text=True, check=True)
+    with TemporaryDirectory(dir=ENGINE) as tmp:
+        path = Path(tmp) / "fixture.mts"
+        path.write_text(script, encoding="utf-8")
+        out = subprocess.run([shutil.which("npx") or "npx", "--yes", "tsx", str(path)], cwd=ENGINE, capture_output=True, text=True, check=True)
     return json.loads(out.stdout)
 
 

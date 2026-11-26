@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from 'react';
+import { lazy, StrictMode, Suspense, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Moon, Sun } from 'lucide-react';
 import { api, fetchMe, type Me } from './api';
@@ -17,6 +17,8 @@ import { useT } from './i18n';
 import { openProject, startAutosave } from './projects';
 import { useSim } from './sim/client';
 import { useUi } from './store';
+
+const Campus = lazy(() => import('./pages/Campus').then(module => ({ default: module.Campus })));
 
 function AcademyMasthead({ me }: { me: Me }) {
   const { theme, locale, set, toast } = useUi();
@@ -69,6 +71,18 @@ function App() {
   const { active, theme, locale, set, page, me } = useUi();
   const opened = useSim((s) => (active ? !!s.views[active] : false));
   const [restored, setRestored] = useState(false);
+  const [pathname, setPathname] = useState(location.pathname);
+
+  useEffect(() => {
+    const change = () => setPathname(location.pathname);
+    addEventListener('popstate', change);
+    return () => removeEventListener('popstate', change);
+  }, []);
+
+  const navigate = (path: string) => {
+    history.pushState(null, '', path);
+    setPathname(path);
+  };
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -92,7 +106,7 @@ function App() {
           await openProject(id).catch(() => {});
           void restoreAssignment(id);
         }
-        if (last && useUi.getState().tabs.includes(last)) await openProject(last);
+        if (location.pathname !== '/campus' && last && useUi.getState().tabs.includes(last)) await openProject(last);
         else useUi.setState({ active: null });
       } else {
         set({ tabs: [], active: null, page: 'home' });
@@ -114,11 +128,13 @@ function App() {
 
   if (!restored) return null;
   const workspaceOpen = !!(me && active && opened);
-  const academyOpen = !!(me && !workspaceOpen);
-  const screenKey = workspaceOpen ? `workspace-${active}` : `${me ? 'page' : 'auth'}-${page}`;
+  const campusOpen = pathname === '/campus';
+  const academyOpen = !!(me && !workspaceOpen && !campusOpen);
+  const screenKey = workspaceOpen ? `workspace-${active}` : campusOpen && me ? 'campus' : `${me ? 'page' : 'auth'}-${page}`;
   const screen = me && active && opened
-    ? <Workspace key={active} project={active} />
+    ? <Workspace key={active} project={active} campus={campusOpen} />
     : !me ? <Home />
+    : campusOpen ? null
     : page === 'teacher' ? <TeacherPage />
     : page === 'student' ? <StudentPage />
     : page === 'courses' ? <CoursesPage />
@@ -129,16 +145,21 @@ function App() {
 
   return (
     <>
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="relative flex h-full min-h-0 flex-col">
         {academyOpen && (
           <>
             <AcademyMasthead me={me} />
-            <AcademyNav current={page} me={me} />
+            <AcademyNav current={page} me={me} openCampus={() => navigate('/campus')} />
           </>
         )}
         <div key={screenKey} className={workspaceOpen ? 'h-full min-h-0' : academyOpen ? 'nl-page-enter min-h-0 flex-1' : 'h-full min-h-0'}>
           {screen}
         </div>
+        {campusOpen && me && (
+          <div className={`absolute inset-0 ${workspaceOpen ? 'invisible pointer-events-none' : ''}`} inert={workspaceOpen}>
+            <Suspense fallback={<p>Chargement du campus…</p>}><Campus me={me} suspended={workspaceOpen} exit={() => navigate('/')} /></Suspense>
+          </div>
+        )}
       </div>
       <Toasts />
     </>

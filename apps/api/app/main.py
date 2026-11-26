@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import auth, classes, collab, courses, exercises, features, orgs, projects, tutor
+from .routers import auth, campus, classes, collab, courses, exercises, features, orgs, projects, tutor
 
 
 def create_app() -> FastAPI:
@@ -21,6 +21,8 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["content-type", "x-csrf-token"],
     )
+    app.state.campus_rooms = {}
+    app.state.campus_recent = {}
 
     @app.middleware("http")
     async def security_headers(request, call_next):
@@ -34,7 +36,7 @@ def create_app() -> FastAPI:
     def health():
         return {"status": "ok"}
 
-    for r in (auth.router, orgs.router, projects.router, exercises.router, courses.router, classes.router, collab.router, tutor.router, features.router):
+    for r in (auth.router, orgs.router, projects.router, exercises.router, courses.router, classes.router, collab.router, tutor.router, features.router, campus.router):
         app.include_router(r)
     return app
 

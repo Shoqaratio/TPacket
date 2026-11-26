@@ -146,6 +146,7 @@ def assignment_out(db: Session, a: Assignment, student_id: str | None) -> dict:
     out = {
         "id": a.id, "class_id": a.class_id, "title": a.title, "exercise_version_id": a.exercise_version_id,
         "opens_at": a.opens_at, "due_at": a.due_at, "exam": a.exam, "duration_min": a.duration_min, "max_attempts": a.max_attempts,
+        "practice": a.campus_template is not None,
         "allow_checks": a.allow_checks, "allow_tutor": a.allow_tutor, "allow_courses": a.allow_courses, "results": a.results,
         "max_score": v.rubric.get("maxScore") if v else None, "kind": v.kind if v else "exercise",
     }
@@ -286,6 +287,7 @@ def start(aid: str, u: User = Depends(current_user), db: Session = Depends(get_d
     a, _, _ = _assignment(db, u, aid)
     if a.opens_at and now() < utc(a.opens_at):
         raise HTTPException(409, "not_open")
+    db.execute(select(User.id).where(User.id == u.id).with_for_update())
     if not db.scalar(select(AssignmentStart).where(AssignmentStart.assignment_id == aid, AssignmentStart.student_id == u.id)):
         db.add(AssignmentStart(assignment_id=aid, student_id=u.id))
         db.commit()
@@ -309,6 +311,8 @@ def check(aid: str, body: ProjectBody, u: User = Depends(current_user), db: Sess
 @router.post("/assignments/{aid}/submissions", status_code=202)
 def submit(aid: str, body: ProjectBody, tasks: BackgroundTasks, u: User = Depends(current_user), db: Session = Depends(get_db)):
     a, c, _ = _assignment(db, u, aid)
+    # Serialize a student's attempts without blocking the rest of the class.
+    db.execute(select(User.id).where(User.id == u.id).with_for_update())
     t = now()
     if a.opens_at and t < utc(a.opens_at):
         raise HTTPException(409, "not_open")
@@ -416,7 +420,7 @@ def my_assignments(u: User = Depends(current_user), db: Session = Depends(get_db
             item = assignment_out(db, a, u.id)
             item["class_name"] = c.name
             out.append(item)
-            if item.get("score") is not None and item.get("max_score"):
+            if not item["practice"] and item.get("score") is not None and item.get("max_score"):
                 scores.append(20 * item["score"] / item["max_score"])
     anns = db.scalars(select(Announcement).where(Announcement.class_id.in_([c.id for c in classes])).order_by(Announcement.created_at.desc()).limit(10)).all() if classes else []
     return {
@@ -437,7 +441,7 @@ def teacher_dashboard(org_id: str, u: User = Depends(current_user), db: Session 
     total_success = 0
     for c in classes:
         sc = []
-        for a in db.scalars(select(Assignment).where(Assignment.class_id == c.id)).all():
+        for a in db.scalars(select(Assignment).where(Assignment.class_id == c.id, Assignment.campus_template.is_(None))).all():
             for s in db.scalars(select(Submission).where(Submission.assignment_id == a.id)).all():
                 score, mx, report = current_score(db, s)
                 if score is None or not mx:

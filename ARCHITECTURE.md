@@ -15,7 +15,7 @@
 │ apps/api  FastAPI + SQLAlchemy 2 + Alembic ── PostgreSQL            │
 │   └─ correction : sous-processus Node ──► engine/dist/grader.mjs    │
 │        (même code que le navigateur, limites CPU/mémoire/délai)     │
-│ Redis (prévu : limitation de débit partagée et salons multi-instance)│
+│ Redis : présence et messages du Campus entre instances             │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -111,3 +111,27 @@ opérations côté serveur, mais les salons et leur journal restent en mémoire 
 participant rejoue les opérations dans son moteur déterministe local. Les ticks serveur font avancer
 le worker de chaque participant ; l'horloge affichée utilise le temps du worker. Les quiz et parcours
 pédagogiques complets restent planifiés dans `ROADMAP.md`.
+
+## TPacket Campus
+
+- La carte `apps/api/app/campus_assets/campus.tmj` s’édite dans Tiled. `campus_map.py` lit la couche
+  orthogonale à données JSON non compressées, les salles, les postes et les guides. L’API fournit la
+  grille à Phaser et utilise la même grille pour la collision, le contrôle des salles et la proximité.
+  Les déplacements WebSocket sont limités à un pas orthogonal par action. Le joueur reste présent quand
+  il travaille dans le simulateur et la boucle graphique du campus est suspendue en arrière-plan.
+- `apps/web/src/campus` contient le rendu Canvas pixel art, un atlas d’avatars, la caméra et la recherche
+  A*. Le chargement de Phaser commence à l’ouverture du campus. La PWA ne précache pas les bundles du
+  campus au premier chargement de l’Académie.
+- Le WebSocket vérifie le cookie, l’origine et l’accès à la classe. Une réévaluation périodique de trois
+  secondes actualise les droits, les fermetures et la modération. Les salons Redis utilisent des baux
+  de présence et Pub/Sub. Le serveur publie un instantané au plus dix fois par seconde et garde la
+  dernière position brièvement pour la reconnexion. Les chats de salle et de proximité sont filtrés
+  côté serveur. La collaboration sur les projets conserve le salon TPacket existant.
+- La migration `0005` ajoute des réglages de classe, une couleur d’avatar et l’affectation d’un devoir
+  à un poste. Le point d’entrée Campus vérifie la proximité et délègue ensuite au démarrage de devoir
+  existant. Les versions d’exercice, soumissions, résultats, annonces et examens restent dans leurs
+  tables actuelles. Le contenu initial est créé dans une transaction par modèle et classe.
+- Le Campus crédite 100 XP par devoir de campus dont la correction automatique visible atteint le
+  maximum. L’API déduit les validations uniques des résultats et vérifie les tenues accessibles.
+  Les modèles installés depuis le campus sont des entraînements exclus des moyennes officielles.
+  Les notes officielles et les examens sont gérés par l’Académie. Le chat de jeu est éphémère.

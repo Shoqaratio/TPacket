@@ -19,7 +19,11 @@ export default defineConfig({
         display: 'standalone',
         icons: [{ src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml' }],
       },
-      workbox: { globPatterns: ['**/*.{js,css,html,svg,woff2}'], navigateFallbackDenylist: [/^\/api\//] },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,svg,woff2}'],
+        globIgnores: ['**/Campus-*.js', '**/game-*.js'],
+        navigateFallbackDenylist: [/^\/api\//],
+      },
     }),
   ],
   worker: { format: 'es' },

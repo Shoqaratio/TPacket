@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -87,16 +88,17 @@ def test_other_class_cannot_see_assignment(admin, grader_bundle):  # noqa: F811
     assert outsider.post(f"/api/assignments/{a['id']}/submissions", json={"project": EMPTY}).status_code == 404
 
 
-@pytest.fixture
-def live_server():
-    """Real uvicorn server: all WebSockets share one event loop, as in production."""
+@contextmanager
+def live_server_url(app=None):
+    """Start a real Uvicorn instance with a dedicated event loop."""
     import socket
     import threading
     import time
 
     import uvicorn
 
-    from app.main import app
+    if app is None:
+        from app.main import app
 
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
@@ -107,9 +109,17 @@ def live_server():
     th.start()
     while not server.started:
         time.sleep(0.05)
-    yield f"ws://127.0.0.1:{port}"
-    server.should_exit = True
-    th.join(5)
+    try:
+        yield f"ws://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        th.join(5)
+
+
+@pytest.fixture
+def live_server():
+    with live_server_url() as url:
+        yield url
 
 
 def _ws(url, client):

@@ -1,6 +1,9 @@
 import { defineConfig } from '@playwright/test';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-const DB = `${process.env.TMPDIR ?? '/tmp'}/netlab-e2e-${Date.now()}.db`;
+const db = join(tmpdir(), `netlab-e2e-${Date.now()}.db`).replaceAll('\\', '/');
+const python = process.env.TPACKET_TEST_PYTHON ?? (process.platform === 'win32' ? '.venv\\Scripts\\python.exe' : '.venv/bin/python');
 
 export default defineConfig({
   testDir: 'e2e',
@@ -13,7 +16,9 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `cd ../api && NETLAB_DATABASE_URL=sqlite:///${DB} NETLAB_BOOTSTRAP_ADMIN_EMAIL=admin@example.com .venv/bin/alembic upgrade head && NETLAB_DATABASE_URL=sqlite:///${DB} NETLAB_BOOTSTRAP_ADMIN_EMAIL=admin@example.com .venv/bin/uvicorn app.main:app --port 8000`,
+      command: `"${python}" -m alembic upgrade head && "${python}" -m uvicorn app.main:app --port 8000`,
+      cwd: '../api',
+      env: { NETLAB_DATABASE_URL: `sqlite:///${db}`, NETLAB_BOOTSTRAP_ADMIN_EMAIL: 'admin@example.com' },
       url: 'http://localhost:8000/api/health',
       reuseExistingServer: false,
       timeout: 60_000,
