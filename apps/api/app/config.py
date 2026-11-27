@@ -19,12 +19,17 @@ class Settings(BaseSettings):
     session_days: int = 14
     cors_origins: list[str] = ["http://localhost:5173"]
     campus_redis_url: str | None = None
-    # The account registering with this e-mail becomes super-administrator (self-hosting bootstrap).
-    bootstrap_admin_email: str | None = None
     node_bin: str = "node"
     grader_path: str = str(ROOT / "packages" / "engine" / "dist" / "grader.mjs")
     grader_timeout_s: float = 20.0
     grader_max_heap_mb: int = 256
+    # At most this many grader subprocesses run at once per API process (each may use a full CPU).
+    grader_concurrency: int = 2
+    # Interactive checks wait this long for a free slot before answering 503 (background jobs wait).
+    grader_queue_wait_s: float = 5.0
+    # Per-user limits on the endpoints that start the grader.
+    checks_per_minute: int = 6
+    submissions_per_minute: int = 5
     max_project_bytes: int = 4 * 1024 * 1024
     login_attempts_per_15min: int = 10
     # Optional OpenAI-compatible endpoint for TPacket Tutor (e.g. http://ollama:11434/v1). Empty = disabled.

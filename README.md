@@ -25,8 +25,9 @@ npm run dev                       # http://localhost:5173 — le simulateur fonc
 # API (comptes, cloud, correction)
 cd apps/api
 python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
-NETLAB_BOOTSTRAP_ADMIN_EMAIL=vous@exemple.fr .venv/bin/alembic upgrade head
-NETLAB_BOOTSTRAP_ADMIN_EMAIL=vous@exemple.fr .venv/bin/uvicorn app.main:app --reload   # /api/docs
+.venv/bin/alembic upgrade head
+.venv/bin/python -m app.cli create-admin vous@exemple.fr   # super-admin (mot de passe demandé)
+.venv/bin/uvicorn app.main:app --reload   # /api/docs
 ```
 
 Le serveur de développement Vite relaie `/api` vers `localhost:8000`.
@@ -50,9 +51,13 @@ est facultative et le mode sans Redis utilise la mémoire d’une seule instance
 ## Déploiement (auto-hébergement)
 
 ```bash
-cp .env.example .env    # renseigner POSTGRES_PASSWORD, NETLAB_BOOTSTRAP_ADMIN_EMAIL…
+cp .env.example .env    # renseigner POSTGRES_PASSWORD…
 docker compose up -d --build   # http://localhost:8080 (placer un terminateur TLS devant)
+docker compose exec api python -m app.cli create-admin vous@exemple.fr   # premier super-admin
 ```
+
+Les droits super-administrateur ne s'obtiennent jamais par l'inscription : utilisez
+`python -m app.cli create-admin|promote-admin|demote-admin EMAIL` sur le serveur (actions journalisées).
 
 > Build et lancement Docker vérifiés sur le serveur privé le 25 novembre. L'instance actuelle est
 > en HTTP sur le réseau local, sans TLS : ne pas l'exposer à Internet avant d'ajouter un terminateur

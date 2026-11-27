@@ -60,6 +60,36 @@ describe('grader', () => {
     expect(r.score).toBe(7);
   });
 
+  it('penalties: dependencies, feedback and completion follow the student outcome', () => {
+    const { net } = twoRouters({ routes: false });
+    const r = grade(structuredClone(net.serialize()), {
+      maxScore: 10,
+      criteria: [
+        // Triggered: Router0 does have this connected route.
+        { id: 'hit', type: 'route_exists', device: 'Router0', destination: '192.168.1.0/24', via: 'connected', points: 2, penalty: true, required: true, feedback: 'remove it' },
+        // Avoided: no such static route exists.
+        { id: 'miss', type: 'route_exists', device: 'Router0', destination: '10.99.0.0/16', via: 'static', points: 2, penalty: true, feedback: 'never shown' },
+        { id: 'afterHit', type: 'hostname', device: 'Router0', expected: 'Router0', points: 5, dependsOn: ['hit'] },
+        { id: 'afterMiss', type: 'hostname', device: 'Router0', expected: 'Router0', points: 5, dependsOn: ['miss'] },
+      ],
+    });
+    const by = Object.fromEntries(r.results.map((x) => [x.id, x]));
+    expect(by.hit!.passed).toBe(false);
+    expect(by.hit!.earned).toBe(-2);
+    expect(by.hit!.feedback).toBe('remove it');
+    expect(by.miss!.passed).toBe(true);
+    expect(by.miss!.earned).toBe(0);
+    expect(by.miss!.feedback).toBeUndefined();
+    expect(by.afterHit!.skipped).toBe(true);
+    expect(by.afterMiss!.skipped).toBe(false);
+    expect(r.completed).toBe(false);
+  });
+
+  it('rejects a malformed dependsOn', () => {
+    const { net } = twoRouters();
+    expect(() => grade(net.serialize(), { maxScore: 5, criteria: [{ id: 'x', type: 'hostname', device: 'Router0', expected: 'R', points: 1, dependsOn: 'y' as never }] })).toThrow();
+  });
+
   it('rejects malformed rubrics', () => {
     const { net } = twoRouters();
     expect(() => grade(net.serialize(), { maxScore: 20, criteria: [{ id: 'x', type: 'rm -rf', points: 1 }] })).toThrow();

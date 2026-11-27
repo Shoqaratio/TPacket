@@ -323,6 +323,9 @@ export function validateRubric(input: unknown): Rubric {
     if (typeof c !== 'object' || !c || typeof c.id !== 'string' || !(CRITERION_TYPES as readonly string[]).includes(c.type as string)) throw new Error(`Invalid criterion ${String(c?.id)}`);
     if (typeof c.points !== 'number' || c.points < 0 || c.points > 1000) throw new Error(`Invalid points for ${c.id}`);
     if (ids.has(c.id)) throw new Error(`Duplicate criterion id ${c.id}`);
+    if (c.dependsOn !== undefined && (!Array.isArray(c.dependsOn) || c.dependsOn.some((d) => typeof d !== 'string'))) {
+      throw new Error(`Invalid dependsOn for ${c.id}`);
+    }
     ids.add(c.id);
   }
   return input as Rubric;
@@ -350,12 +353,16 @@ export function grade(projectInput: unknown, rubricInput: unknown): GradeReport 
         check = ko('error', `Evaluation error: ${(e as Error).message}`);
       }
     }
-    if (check.ok) passed.add(c.id);
-    const earned = c.penalty ? (check.ok ? -c.points : 0) : check.ok ? c.points : 0;
+    // For a penalty, the check detects a forbidden situation: the STUDENT succeeds when it does not
+    // match. Every downstream decision (dependencies, feedback, completion) uses this single value.
+    // A penalty skipped because of a dependency is neither applied nor counted as satisfied.
+    const succeeded = skipped ? false : c.penalty ? !check.ok : check.ok;
+    if (succeeded) passed.add(c.id);
+    const earned = c.penalty ? (!skipped && check.ok ? -c.points : 0) : succeeded ? c.points : 0;
     results.push({
       id: c.id,
       type: c.type,
-      passed: c.penalty ? !check.ok : check.ok,
+      passed: succeeded,
       skipped,
       points: c.points,
       earned,
@@ -363,7 +370,7 @@ export function grade(projectInput: unknown, rubricInput: unknown): GradeReport 
       required: !!c.required,
       code: check.code,
       message: check.message,
-      ...(!check.ok && c.feedback ? { feedback: c.feedback } : {}),
+      ...(!succeeded && c.feedback ? { feedback: c.feedback } : {}),
     });
   }
   const raw = results.reduce((s, r) => s + r.earned, 0);

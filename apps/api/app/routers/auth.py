@@ -48,9 +48,8 @@ def register(body: RegisterIn, request: Request, response: Response, db: Session
     email = body.email.lower()
     if db.scalar(select(User).where(func.lower(User.email) == email)):
         raise HTTPException(409, "email_taken")
-    s = get_settings()
-    u = User(email=email, password_hash=hash_password(body.password), display_name=body.display_name.strip(), locale=body.locale,
-             is_superadmin=bool(s.bootstrap_admin_email and s.bootstrap_admin_email.lower() == email))
+    # Never grants super-admin: use `python -m app.cli create-admin` / `promote-admin` on the server.
+    u = User(email=email, password_hash=hash_password(body.password), display_name=body.display_name.strip(), locale=body.locale, is_superadmin=False)
     db.add(u)
     try:
         db.flush()

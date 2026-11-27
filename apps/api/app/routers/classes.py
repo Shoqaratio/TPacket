@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..db import get_db
 from ..deps import STAFF, current_user, membership, require_role
-from ..grading.runner import run_grader, student_view
+from ..grading.runner import GRADER_BUSY, limit_checks, limit_submissions, run_grader, student_view
 from ..models import (
     Announcement, Assignment, AssignmentExtension, AssignmentStart, AuditLog, ClassMember, ExamEvent, Exercise, ExerciseVersion,
     GradeHistory, GradingJob, GradingResult, Organization, OrganizationMember, OrgInvite, Role, SchoolClass, Submission,
@@ -300,9 +300,13 @@ def check(aid: str, body: ProjectBody, u: User = Depends(current_user), db: Sess
     a, _, _ = _assignment(db, u, aid)
     if not a.allow_checks:
         raise HTTPException(403, "checks_disabled")
+    limit_checks(u.id)
     v = db.get(ExerciseVersion, a.exercise_version_id)
     public = {**v.rubric, "criteria": [{**c, "dependsOn": [d for d in c.get("dependsOn", []) if not any(x["id"] == d and x.get("hidden") for x in v.rubric["criteria"])]} for c in v.rubric["criteria"] if not c.get("hidden")]}
-    res = run_grader(body.project, public)
+    # Interactive: wait briefly for a grader slot, then ask the client to retry rather than pile up.
+    res = run_grader(body.project, public, wait_s=get_settings().grader_queue_wait_s)
+    if res.error == GRADER_BUSY:
+        raise HTTPException(503, "grader_busy", headers={"Retry-After": "5"})
     if not res.ok:
         raise HTTPException(422, "invalid_project")
     return {"results": [{"id": r["id"], "type": r["type"], "passed": r["passed"], "message": r["message"], "feedback": r.get("feedback")} for r in res.report["results"]]}
@@ -311,6 +315,7 @@ def check(aid: str, body: ProjectBody, u: User = Depends(current_user), db: Sess
 @router.post("/assignments/{aid}/submissions", status_code=202)
 def submit(aid: str, body: ProjectBody, tasks: BackgroundTasks, u: User = Depends(current_user), db: Session = Depends(get_db)):
     a, c, _ = _assignment(db, u, aid)
+    limit_submissions(u.id)
     # Serialize a student's attempts without blocking the rest of the class.
     db.execute(select(User.id).where(User.id == u.id).with_for_update())
     t = now()

@@ -53,5 +53,27 @@ def test_csrf_required_for_state_changes():
     assert c.post("/api/projects", json={"name": "p", "data": {"format": "netlab", "schemaVersion": 1, "devices": [], "links": []}}).status_code == 201
 
 
-def test_bootstrap_admin(admin):
-    assert admin.get("/api/auth/me").json()["is_superadmin"] is True
+def test_register_never_grants_superadmin():
+    c = make_user("admin@example.com", "Admin")
+    assert c.get("/api/auth/me").json()["is_superadmin"] is False
+    assert c.post("/api/orgs", json={"name": "Lycée test", "slug": "lycee-test"}).status_code == 403
+
+
+def test_cli_create_promote_demote(monkeypatch, capsys):
+    from app.cli import main
+
+    monkeypatch.setenv("TPACKET_ADMIN_PASSWORD", "short")
+    assert main(["create-admin", "boss@example.com"]) == 1  # password policy enforced
+    monkeypatch.setenv("TPACKET_ADMIN_PASSWORD", PASSWORD)
+    assert main(["create-admin", "Boss@Example.com", "--name", "Boss"]) == 0
+    c = Client(app)
+    assert c.post("/api/auth/login", json={"email": "boss@example.com", "password": PASSWORD}).status_code == 200
+    assert c.get("/api/auth/me").json()["is_superadmin"] is True
+    assert main(["demote-admin", "boss@example.com"]) == 0
+    assert c.get("/api/auth/me").json()["is_superadmin"] is False
+    assert main(["promote-admin", "boss@example.com"]) == 0
+    assert c.get("/api/auth/me").json()["is_superadmin"] is True
+    assert main(["promote-admin", "nobody@example.com"]) == 1
+    u = make_user("teacher@example.com")
+    assert main(["create-admin", "teacher@example.com"]) == 0  # existing account: promoted, password untouched
+    assert u.get("/api/auth/me").json()["is_superadmin"] is True

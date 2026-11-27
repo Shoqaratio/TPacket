@@ -3,12 +3,13 @@ import tempfile
 
 _db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 os.environ["NETLAB_DATABASE_URL"] = f"sqlite:///{_db.name}"
-os.environ["NETLAB_BOOTSTRAP_ADMIN_EMAIL"] = "admin@example.com"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app.cli import promote  # noqa: E402
 from app.db import Base, engine  # noqa: E402
+from app.grading.runner import check_limiter, submit_limiter  # noqa: E402
 from app.main import app  # noqa: E402
 from app.routers.auth import login_limiter  # noqa: E402
 
@@ -20,6 +21,8 @@ def fresh_db():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     login_limiter.reset()
+    check_limiter.reset()
+    submit_limiter.reset()
     yield
 
 
@@ -43,7 +46,9 @@ def make_user(email: str, name: str = "User") -> Client:
 
 @pytest.fixture
 def admin() -> Client:
-    return make_user("admin@example.com", "Admin")
+    c = make_user("admin@example.com", "Admin")
+    promote("admin@example.com")  # super-admin is granted by the server CLI only
+    return c
 
 
 def new_org(admin: Client, slug: str) -> str:

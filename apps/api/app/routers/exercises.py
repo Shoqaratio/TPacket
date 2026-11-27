@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..db import SessionLocal, get_db
 from ..deps import STAFF, current_user, membership, require_role
-from ..grading.runner import run_grader, student_view
+from ..grading.runner import limit_submissions, run_grader, student_view
 from ..models import AuditLog, Exercise, ExerciseVersion, GradingJob, GradingResult, Role, Submission, SubmissionSnapshot, User
 from ..schemas import ExerciseIn, ExerciseVersionIn, SubmissionIn
 from ..skills import SKILL_CODES
@@ -113,6 +113,7 @@ def get_version(vid: str, u: User = Depends(current_user), db: Session = Depends
 def grade_submission(submission_id: str) -> None:
     """Background grading job. Reads the immutable snapshot, never client-provided scores."""
     db = SessionLocal()
+    job = None
     try:
         job = db.scalar(select(GradingJob).where(GradingJob.submission_id == submission_id, GradingJob.status == "pending"))
         if not job:
@@ -122,6 +123,7 @@ def grade_submission(submission_id: str) -> None:
         sub = db.get(Submission, submission_id)
         snap = db.scalar(select(SubmissionSnapshot).where(SubmissionSnapshot.submission_id == submission_id))
         v = db.get(ExerciseVersion, sub.exercise_version_id)
+        # Waits for a free grader slot: submissions queue instead of overloading the host.
         res = run_grader(snap.data, v.rubric)
         if res.ok:
             r = res.report
@@ -132,6 +134,13 @@ def grade_submission(submission_id: str) -> None:
             job.error = res.error
         job.finished_at = datetime.now(UTC)
         db.commit()
+    except Exception as exc:  # noqa: BLE001 - a job must never stay "running" forever
+        db.rollback()
+        if job is not None:
+            job.status = "error"
+            job.error = f"internal error: {type(exc).__name__}"[:500]
+            job.finished_at = datetime.now(UTC)
+            db.commit()
     finally:
         db.close()
 
@@ -141,6 +150,7 @@ def submit(vid: str, body: SubmissionIn, tasks: BackgroundTasks, u: User = Depen
     v, e, _ = _version_for(db, u, vid)
     if not v.published:
         raise HTTPException(409, "not_published")
+    limit_submissions(u.id)
     raw = json.dumps(body.project, sort_keys=True)
     if len(raw) > get_settings().max_project_bytes:
         raise HTTPException(413, "project_too_large")

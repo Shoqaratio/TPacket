@@ -16,9 +16,9 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `"${python}" -m alembic upgrade head && "${python}" -m uvicorn app.main:app --port 8000`,
+      command: `"${python}" -m alembic upgrade head && "${python}" -m app.cli create-admin admin@example.com --name Admin && "${python}" -m uvicorn app.main:app --port 8000`,
       cwd: '../api',
-      env: { NETLAB_DATABASE_URL: `sqlite:///${db}`, NETLAB_BOOTSTRAP_ADMIN_EMAIL: 'admin@example.com' },
+      env: { NETLAB_DATABASE_URL: `sqlite:///${db}`, TPACKET_ADMIN_PASSWORD: 'correct horse battery' },
       url: 'http://localhost:8000/api/health',
       reuseExistingServer: false,
       timeout: 60_000,
