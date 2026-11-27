@@ -1,0 +1,49 @@
+# NetLab Academy — audit de sécurité du dépôt
+
+**Décision recommandée : différer l’ouverture à Internet.** Vérifier d’abord le trajet HTTPS réel et corriger deux risques de disponibilité : les journaux de collaboration conservés en mémoire et l’absence de budget global sur l’authentification. Si l’instance est déjà exposée, la vérification du transport passe en premier. Aucun incident ni accès illicite n’a été constaté par cet audit ; les impacts ci-dessous sont déduits du code, pas reproduits sur un serveur.
+
+**Périmètre :** copie locale au commit `14a43b5`, avec une modification préexistante de `apps/api/app/config.py`. Revue ciblée de l’API, de la collaboration temps réel, du correcteur, des configurations Docker/Nginx et des workflows CI ; inventaire du frontal et du moteur, tests existants et audit npm. Aucune correction appliquée. Ce rapport n’est pas une validation exhaustive de l’instance déployée.
+
+## Priorité haute — avant exposition
+
+| Constat et preuve | Impact | Correction et critère de clôture |
+|---|---|---|
+| **Transport : la protection repose sur un proxy externe.** `docker-compose.yml:44–51` publie le port HTTP sans adresse d’écoute précise. `.env.example:10–12` recommande bien `Secure=true`, mais `apps/api/app/config.py:15–20` utilise `False` par défaut. `SECURITY.md:42–44` décrit un déploiement HTTP ; il ne prouve pas l’état actuel. | Si le port est joignable directement, le formulaire de connexion peut être servi en clair. Le drapeau `Secure` protège le cookie, pas les identifiants saisis sur une page HTTP. | Restreindre l’accès à la gateway au seul terminateur TLS ; refuser le démarrage en production avec des cookies non sécurisés. Clôture : depuis le réseau utilisateur, seul HTTPS permet la connexion et le cookie émis porte `Secure` et `HttpOnly`. |
+| **Collaboration : le journal est limité en nombre, pas en mémoire.** `apps/api/app/routers/collab.py:35–36, 90–105, 161–178`. Une salle conserve jusqu’à 50 000 opérations ; un message peut atteindre 256 K caractères. L’arrivée d’un participant sérialise le journal entier. Le conteneur API est limité à 1 Go (`docker-compose.yml:34–36`). | Une salle ouverte par un utilisateur autorisé peut pénaliser toute l’API, pas seulement ses participants. Les ticks remplissent aussi le journal pendant une séance longue. Aucun essai de saturation effectué. | Valider chaque type d’opération, imposer un budget en octets par salle et global, puis compacter le journal en instantanés. Tester avec des budgets miniatures que l’état initial reste borné et qu’une salle pleine n’affecte pas les autres. |
+| **Authentification : les limites ne bornent ni le nombre de clés ni le coût total.** `apps/api/app/security.py:43–65` ne supprime pas les clés inactives ; `routers/auth.py:43–75` limite par e-mail et couple IP/e-mail, sans budget global visible. L’inscription effectue un hachage Argon2 sans limite de débit dans le chemin examiné. | Croissance durable de la mémoire du processus et concurrence entre calculs de mots de passe ; ralentissement possible pour tous les élèves. Les protections éventuelles du proxy externe n’ont pas été vérifiées. | Utiliser des compteurs à expiration et capacité bornée, un plafond de calculs simultanés et un quota d’inscription. Tenir compte des classes partageant une même IP. Tester l’expiration des clés et le maintien du service sous budget réduit. |
+
+## Autorisations et intégrité
+
+| Priorité | Constat | Correction attendue |
+|---|---|---|
+| Haute si les liens donnent l’écriture | **Une session WebSocket déjà ouverte conserve ses droits.** `routers/collab.py:108–118, 135–158, 163–202` vérifie session et appartenance à la connexion, puis réutilise le rôle mémorisé, y compris pour sauvegarder. `routers/auth.py:79–85` supprime la session à la déconnexion sans avertir cette boucle. | Propager la révocation aux sockets, borner leur durée à celle de la session et revérifier les droits avant la sauvegarde. Test attendu : après déconnexion ou retrait d’appartenance, le canal ouvert ne reçoit plus les changements et ne peut plus écrire. |
+| Moyenne ; haute pour une invitation privilégiée | **La consommation d’une invitation n’est pas atomique.** `routers/auth.py:92–110` lit le compteur, décide de l’admission, puis l’incrémente. Deux transactions portant sur des comptes différents peuvent décider sur la même valeur. | Verrouiller la ligne d’invitation ou réserver un usage par mise à jour conditionnelle ; créer l’adhésion dans la même transaction. Sur PostgreSQL, vérifier qu’une invitation à usage unique n’accorde qu’une seule adhésion en cas de demandes concurrentes. |
+| Moyenne si l’IA est activée | **La règle de devoir dépend du contexte déclaré par le client.** `routers/tutor.py:28–32, 51–70` n’applique l’interdiction que si la requête contient un identifiant de devoir. Le point d’accès général reste accessible au même utilisateur. | Définir la garantie voulue : si le tuteur intégré doit être indisponible pendant un examen, dériver cet état côté serveur. Sinon, décrire la restriction comme limitée à l’interface du devoir. Tester les deux contextes. Cela ne contrôle pas l’usage d’un outil externe. |
+
+## Construction, dépendances et défense en profondeur
+
+- **npm : quatre entrées modérées** dans le rapport en ligne (`glob`, `minimatch`, `vite-plugin-pwa`, `workbox-build`), **zéro signalement avec `--omit=dev`**. Il ne s’agit pas nécessairement de quatre failles indépendantes ni de quatre vulnérabilités livrées au navigateur. Examiner la chaîne de construction PWA, mettre à jour les dépendances parentes et retester le build et le mode hors ligne. Le résultat hors ligne, qui indiquait zéro, n’a pas été retenu.
+- **Python et images : versions effectives non garanties.** `apps/api/requirements.txt:1–9` indique des minimums, sans verrouillage des résolutions ; les Dockerfiles et Compose utilisent des tags d’images. Le scanner `pip_audit` n’était pas installé dans l’environnement local : **aucun bilan CVE Python ou images n’est établi**. Verrouiller les résolutions, scanner l’image produite et conserver son inventaire avec le digest déployé.
+- **Contenu de l’image API :** le Dockerfile exécute `COPY apps/api/ .`, alors qu’un `.venv` existe dans ce dossier et qu’aucun `*dockerignore` suivi n’est ressorti de l’inventaire Git. Un build local peut donc embarquer des fichiers qui n’auraient jamais dû être distribués. Préférer des copies explicites des sources et migrations, exclure environnements, bases locales et fichiers `.env`, puis contrôler l’image finale. Aucune image ni fuite de secret vérifiée. Référence : documentation Docker sur le contexte de build. citeturn638068view1
+- **Correcteur :** `apps/api/app/grading/runner.py:49–86` limite CPU, fichiers ouverts, tas V8 et concurrence, mais emploie `preexec_fn` dans une application utilisant des threads. Python signale un risque de blocage avant le lancement du processus ; le timeout du correcteur n’est donc pas une garantie suffisante. Déplacer les limites dans un lanceur ou un worker dédié et vérifier la récupération d’un créneau après échec du démarrage. Aucun blocage observé pendant les tests. citeturn638068view0
+- **Secrets de partage :** la route WebSocket accepte un jeton en paramètre de requête (`routers/collab.py:130–145`). Sa présence effective dans les journaux n’a pas été vérifiée. Contrôler la journalisation de toute la chaîne avec une valeur factice ; masquer les paramètres ou utiliser un ticket de connexion bref et à usage unique.
+- **CSP :** `infra/nginx.conf:7–11` autorise les schémas `ws:` et `wss:` sans limiter l’hôte. Restreindre aux destinations nécessaires et tester la collaboration et le campus depuis l’origine de production.
+
+## Contrôles réellement effectués
+
+| Contrôle local | Résultat |
+|---|---|
+| Suite API `pytest`, avec la base SQLite temporaire du projet | 40 réussis, 1 ignoré, 2 avertissements. Pas de test local d’intégration Redis dans cette exécution. |
+| Tests du moteur | 92 réussis |
+| Tests unitaires du frontal | 9 réussis |
+| Audit npm en ligne | 4 entrées modérées sur l’arbre complet ; 0 hors dépendances de développement |
+| Recherche ciblée dans `apps/web/src` et `packages/engine/src` | Aucun résultat pour les motifs recherchés (`dangerouslySetInnerHTML`, affectation à `innerHTML`, `eval`, `new Function`). Ce n’est pas une preuve d’absence de XSS. |
+
+**Protections à conserver :** Argon2id pour les mots de passe ; jetons de session aléatoires stockés hachés et cookies de session `HttpOnly` ; API sous utilisateur non privilégié, système de fichiers en lecture seule et réseau backend interne dans Compose ; workflow de déploiement limité à un push sur `main` du même dépôt après CI réussie, avec sélection du SHA testé. Ces constats portent sur les fichiers examinés, pas sur leur application effective en production.
+
+## Ce qui reste pour clôturer un audit complet
+
+1. **Exploitation :** contrôler TLS, ports réellement joignables, journaux, droits du runner auto-hébergé, accès aux sauvegardes et restauration sur un environnement isolé.
+2. **Isolation des données :** compléter la revue route par route des cours, classes, projets, campus, exports, notes et tests cachés avec une matrice élève/enseignant/admin sur deux établissements. Les tests existants ne remplacent pas cette revue.
+3. **Artefact livré :** analyser les dépendances Python résolues et les images par digest, les secrets dans l’historique Git et le contenu des couches ; contrôler aussi le cache navigateur/service worker sur un poste partagé après déconnexion.
+4. **Validation des corrections :** exécuter les tests de révocation, quotas et concurrence sur PostgreSQL/Redis, puis vérifier le parcours navigateur derrière les deux proxys. Les 141 tests réussis constituent une base de non-régression, pas un feu vert pour l’exposition publique.
