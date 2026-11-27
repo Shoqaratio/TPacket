@@ -22,4 +22,6 @@ ENV NETLAB_GRADER_PATH=/app/grader/grader.mjs \
 RUN useradd --system --uid 10001 netlab
 USER netlab
 EXPOSE 8000
+# '*' is acceptable only because the API sits on the internal backend network (reachable from the web
+# container only) and the gateway rewrites X-Forwarded-For. Never publish this port directly.
 CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]

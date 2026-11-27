@@ -331,6 +331,18 @@ export function validateRubric(input: unknown): Rubric {
   return input as Rubric;
 }
 
+/**
+ * Message of a criterion skipped because of unmet dependencies. Hidden criteria are only counted:
+ * their ids must never reach a student through a visible criterion.
+ */
+export function requiresMessage(blocked: string[], hiddenIds: ReadonlySet<string>): string {
+  const visible = blocked.filter((d) => !hiddenIds.has(d));
+  const n = blocked.length - visible.length;
+  const hidden = n === 1 ? '1 hidden criterion' : `${n} hidden criteria`;
+  if (!visible.length) return `Requires: ${hidden}`;
+  return `Requires: ${visible.join(', ')}${n ? ` (+${hidden})` : ''}`;
+}
+
 export function grade(projectInput: unknown, rubricInput: unknown): GradeReport {
   const rubric = validateRubric(rubricInput);
   const project: ProjectDoc = validateProject(structuredClone(projectInput));
@@ -338,13 +350,14 @@ export function grade(projectInput: unknown, rubricInput: unknown): GradeReport 
   net.converge();
   const results: CriterionResult[] = [];
   const passed = new Set<string>();
+  const hiddenIds = new Set(rubric.criteria.filter((c) => c.hidden).map((c) => c.id));
   for (const c of rubric.criteria) {
     const deps = c.dependsOn ?? [];
     const blocked = deps.filter((d) => !passed.has(d));
     let check: Check;
     let skipped = false;
     if (blocked.length) {
-      check = ko('dependency', `Requires: ${blocked.join(', ')}`);
+      check = ko('dependency', requiresMessage(blocked, hiddenIds));
       skipped = true;
     } else {
       try {

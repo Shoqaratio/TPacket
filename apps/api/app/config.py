@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     grader_timeout_s: float = 20.0
     grader_max_heap_mb: int = 256
     # At most this many grader subprocesses run at once per API process (each may use a full CPU).
+    # Jobs left 'running' longer than this (crash, restart) are graded again at startup.
+    grading_stale_after_s: float = 900.0
+    recover_jobs_on_startup: bool = True
     grader_concurrency: int = 2
     # Interactive checks wait this long for a free slot before answering 503 (background jobs wait).
     grader_queue_wait_s: float = 5.0

@@ -100,12 +100,37 @@ def _run(project: dict[str, Any], rubric: dict[str, Any]) -> GradeOutcome:
     return GradeOutcome(True, report=out["report"])
 
 
+_REQUIRES = "Requires: "
+
+
+def _mask_requires(message: Any, hidden_ids: set[str]) -> Any:
+    """Rewrites a dependency message so hidden criterion ids never reach a student.
+
+    Same output as the engine's requiresMessage(); also covers reports stored before the fix.
+    """
+    if not isinstance(message, str) or not message.startswith(_REQUIRES):
+        return message
+    items = [x.strip() for x in message[len(_REQUIRES):].split(",")]
+    if not any(i in hidden_ids for i in items):
+        return message
+    visible = [i for i in items if i not in hidden_ids]
+    n = len(items) - len(visible)
+    hidden = "1 hidden criterion" if n == 1 else f"{n} hidden criteria"
+    if not visible:
+        return f"{_REQUIRES}{hidden}"
+    return f"{_REQUIRES}{', '.join(visible)} (+{hidden})"
+
+
 def student_view(report: dict[str, Any], reveal_hidden: bool) -> dict[str, Any]:
     """Removes hidden tests (name, message, points) from what a student can see."""
     if reveal_hidden:
         return report
-    visible = [r for r in report["results"] if not r.get("hidden")]
     hidden = [r for r in report["results"] if r.get("hidden")]
+    hidden_ids = {r["id"] for r in hidden}
+    visible = [
+        {**r, "message": _mask_requires(r.get("message"), hidden_ids)} if r.get("code") == "dependency" else r
+        for r in report["results"] if not r.get("hidden")
+    ]
     return {
         **report,
         "results": visible,

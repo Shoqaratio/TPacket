@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { grade, type Rubric } from '../src';
+import { grade, requiresMessage, type Rubric } from '../src';
 import { cli, twoRouters } from './helpers';
 
 const rubric: Rubric = {
@@ -22,6 +22,9 @@ describe('grader', () => {
     expect(by.ip!.passed && by.route!.passed && by.conn!.passed).toBe(true);
     expect(by.secret!.passed).toBe(false);
     expect(by.save!.skipped).toBe(true);
+    // 'save' is visible but depends on the hidden 'secret': its id must not leak.
+    expect(by.save!.message).toBe('Requires: 1 hidden criterion');
+    expect(JSON.stringify(by.save)).not.toContain('secret');
     expect(report.score).toBe(12);
     expect(report.completed).toBe(true);
     expect(report.results.find((r) => r.id === 'secret')!.hidden).toBe(true);
@@ -93,5 +96,14 @@ describe('grader', () => {
   it('rejects malformed rubrics', () => {
     const { net } = twoRouters();
     expect(() => grade(net.serialize(), { maxScore: 20, criteria: [{ id: 'x', type: 'rm -rf', points: 1 }] })).toThrow();
+  });
+});
+
+describe('requiresMessage', () => {
+  it('lists visible dependencies and only counts hidden ones', () => {
+    const hidden = new Set(['h1', 'h2']);
+    expect(requiresMessage(['a', 'b'], hidden)).toBe('Requires: a, b');
+    expect(requiresMessage(['a', 'h1'], hidden)).toBe('Requires: a (+1 hidden criterion)');
+    expect(requiresMessage(['h1', 'h2'], hidden)).toBe('Requires: 2 hidden criteria');
   });
 });

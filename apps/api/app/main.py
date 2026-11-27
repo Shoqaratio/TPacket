@@ -1,8 +1,17 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
+from .grading.recovery import start_recovery
 from .routers import auth, campus, classes, collab, courses, exercises, features, orgs, projects, tutor
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    start_recovery()  # re-grades jobs interrupted by a crash/restart
+    yield
 
 
 def create_app() -> FastAPI:
@@ -13,6 +22,7 @@ def create_app() -> FastAPI:
         description="Plateforme pédagogique réseau — API REST. Documentation OpenAPI : /api/docs",
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
+        lifespan=lifespan,
     )
     app.add_middleware(
         CORSMiddleware,

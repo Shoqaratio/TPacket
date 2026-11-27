@@ -3,7 +3,7 @@ import json
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
@@ -118,8 +118,15 @@ def grade_submission(submission_id: str) -> None:
         job = db.scalar(select(GradingJob).where(GradingJob.submission_id == submission_id, GradingJob.status == "pending"))
         if not job:
             return
-        job.status = "running"
+        # Atomic claim: when several workers/instances recover jobs, only one grades each of them.
+        claimed = db.execute(
+            update(GradingJob).where(GradingJob.id == job.id, GradingJob.status == "pending").values(status="running")
+        ).rowcount
         db.commit()
+        if claimed != 1:
+            job = None  # graded elsewhere: never touch it in the error handler
+            return
+        db.refresh(job)
         sub = db.get(Submission, submission_id)
         snap = db.scalar(select(SubmissionSnapshot).where(SubmissionSnapshot.submission_id == submission_id))
         v = db.get(ExerciseVersion, sub.exercise_version_id)

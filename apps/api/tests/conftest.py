@@ -3,6 +3,7 @@ import tempfile
 
 _db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 os.environ["NETLAB_DATABASE_URL"] = f"sqlite:///{_db.name}"
+os.environ["NETLAB_RECOVER_JOBS_ON_STARTUP"] = "false"  # tests call recover_jobs() explicitly
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
